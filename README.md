@@ -16,6 +16,7 @@ Production-minded learning project for building an AI-enabled customer support S
 - Frontend: Vue 3, TypeScript, Vite, Tailwind CSS
 - Database: PostgreSQL
 - Cache/Queue: Redis
+- Realtime: Laravel Reverb, Laravel Echo, WebSockets
 
 ## Quick Start
 
@@ -34,9 +35,10 @@ composer install
 php artisan key:generate
 php artisan migrate
 php artisan serve
+php artisan reverb:start
 ```
 
-Backend will run at `http://127.0.0.1:8000`.
+Backend API runs at `http://127.0.0.1:8000` and Reverb runs at `ws://127.0.0.1:8080`.
 
 ### 3. Frontend setup
 
@@ -49,6 +51,13 @@ npm run dev
 
 Frontend will run at `http://127.0.0.1:5173`.
 
+Alternative backend dev mode (starts API + queue + logs + Reverb):
+
+```bash
+cd backend
+composer run dev
+```
+
 ## Environment Defaults
 
 Backend `.env` defaults are prepared for:
@@ -57,10 +66,13 @@ Backend `.env` defaults are prepared for:
 - Redis on `127.0.0.1:6379`
 - queue driver: `redis`
 - cache store: `redis`
+- broadcast driver: `reverb`
+- reverb websocket server on `127.0.0.1:8080`
 
 Frontend `.env` defaults are prepared for:
 
 - API base URL: `http://127.0.0.1:8000/api/v1`
+- Reverb websocket app key/host/port/scheme
 
 ## API Response Standard
 
@@ -118,6 +130,22 @@ Customer list filters:
 - `search`
 - `source_channel`
 - `tag`
+
+## Realtime Ticket Events
+
+Broadcasted events over private channels:
+
+- `ticket.created`
+- `ticket.updated`
+- `ticket.assigned`
+- `ticket.message-created`
+- `ticket.resolved`
+
+Channels:
+
+- `private-organizations.{organizationId}.tickets`
+- `private-organizations.{organizationId}.tickets.{ticketId}`
+- `private-users.{userId}.assignments`
 
 Error responses:
 

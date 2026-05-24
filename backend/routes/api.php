@@ -6,7 +6,15 @@ use App\Http\Controllers\Api\V1\HealthCheckController;
 use App\Http\Controllers\Api\V1\Organizations\OrganizationController;
 use App\Http\Controllers\Api\V1\Organizations\OrganizationMembershipController;
 use App\Http\Controllers\Api\V1\Tickets\TicketController;
+use App\Http\Controllers\Api\V1\KnowledgeBase\KnowledgeCategoryController;
+use App\Http\Controllers\Api\V1\KnowledgeBase\KnowledgeArticleController;
+use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Route;
+
+Broadcast::routes([
+    'prefix' => 'v1',
+    'middleware' => ['auth:sanctum'],
+]);
 
 Route::prefix('v1')->group(function (): void {
     Route::get('/health', HealthCheckController::class);
@@ -60,6 +68,28 @@ Route::prefix('v1')->group(function (): void {
                     ->middleware('organization.role:owner,admin,agent');
                 Route::post('/tickets/{ticket}/messages', [TicketController::class, 'addMessage'])
                     ->middleware('organization.role:owner,admin,agent');
+
+                // Knowledge Base Categories
+                Route::get('/knowledge-base/categories', [KnowledgeCategoryController::class, 'index'])
+                    ->middleware('organization.role:owner,admin,agent');
+                Route::post('/knowledge-base/categories', [KnowledgeCategoryController::class, 'store'])
+                    ->middleware('organization.role:owner,admin');
+                Route::patch('/knowledge-base/categories/{category}', [KnowledgeCategoryController::class, 'update'])
+                    ->middleware('organization.role:owner,admin');
+                Route::delete('/knowledge-base/categories/{category}', [KnowledgeCategoryController::class, 'destroy'])
+                    ->middleware('organization.role:owner,admin');
+
+                // Knowledge Base Articles
+                Route::get('/knowledge-base/articles', [KnowledgeArticleController::class, 'index'])
+                    ->middleware('organization.role:owner,admin,agent');
+                Route::get('/knowledge-base/articles/{article}', [KnowledgeArticleController::class, 'show'])
+                    ->middleware('organization.role:owner,admin,agent');
+                Route::post('/knowledge-base/articles', [KnowledgeArticleController::class, 'store'])
+                    ->middleware('organization.role:owner,admin');
+                Route::patch('/knowledge-base/articles/{article}', [KnowledgeArticleController::class, 'update'])
+                    ->middleware('organization.role:owner,admin');
+                Route::delete('/knowledge-base/articles/{article}', [KnowledgeArticleController::class, 'destroy'])
+                    ->middleware('organization.role:owner,admin');
             });
     });
 });

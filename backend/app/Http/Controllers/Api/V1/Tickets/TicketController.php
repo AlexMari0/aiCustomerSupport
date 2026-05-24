@@ -2,6 +2,11 @@
 
 namespace App\Http\Controllers\Api\V1\Tickets;
 
+use App\Events\Tickets\TicketAssigned;
+use App\Events\Tickets\TicketCreated;
+use App\Events\Tickets\TicketMessageCreated;
+use App\Events\Tickets\TicketResolved;
+use App\Events\Tickets\TicketUpdated;
 use App\Http\Controllers\Api\ApiController;
 use App\Http\Requests\Tickets\AssignTicketRequest;
 use App\Http\Requests\Tickets\StoreTicketMessageRequest;
@@ -240,6 +245,8 @@ class TicketController extends ApiController
             return $ticket;
         });
 
+        TicketCreated::dispatch($ticket, $request->user()->id);
+
         return $this->success([
             'id' => $ticket->id,
             'subject' => $ticket->subject,
@@ -255,10 +262,26 @@ class TicketController extends ApiController
     ): JsonResponse {
         $scopedTicket = $this->resolveScopedTicket($organization, $ticket);
         $this->assertAgentCanAccessTicket($request, $organization, $scopedTicket);
+        $previousStatus = $scopedTicket->status;
 
         $scopedTicket->update([
             'status' => $request->string('status')->value(),
         ]);
+
+        TicketUpdated::dispatch(
+            $scopedTicket,
+            [
+                'status' => [
+                    'from' => $previousStatus,
+                    'to' => $scopedTicket->status,
+                ],
+            ],
+            $request->user()->id
+        );
+
+        if ($scopedTicket->status === TicketStatuses::RESOLVED && $previousStatus !== TicketStatuses::RESOLVED) {
+            TicketResolved::dispatch($scopedTicket, $request->user()->id);
+        }
 
         return $this->success([
             'id' => $scopedTicket->id,
@@ -272,10 +295,22 @@ class TicketController extends ApiController
         Ticket $ticket
     ): JsonResponse {
         $scopedTicket = $this->resolveScopedTicket($organization, $ticket);
+        $previousPriority = $scopedTicket->priority;
 
         $scopedTicket->update([
             'priority' => $request->string('priority')->value(),
         ]);
+
+        TicketUpdated::dispatch(
+            $scopedTicket,
+            [
+                'priority' => [
+                    'from' => $previousPriority,
+                    'to' => $scopedTicket->priority,
+                ],
+            ],
+            $request->user()->id
+        );
 
         return $this->success([
             'id' => $scopedTicket->id,
@@ -289,6 +324,7 @@ class TicketController extends ApiController
         Ticket $ticket
     ): JsonResponse {
         $scopedTicket = $this->resolveScopedTicket($organization, $ticket);
+        $previousAssigneeId = $scopedTicket->assigned_to;
         $assigneeId = (int) $request->integer('assignee_id');
 
         if (! $request->user()->belongsToOrganization($organization->id)) {
@@ -307,6 +343,19 @@ class TicketController extends ApiController
         $scopedTicket->update([
             'assigned_to' => $assigneeId,
         ]);
+
+        TicketAssigned::dispatch($scopedTicket, $request->user()->id);
+
+        TicketUpdated::dispatch(
+            $scopedTicket,
+            [
+                'assigned_to' => [
+                    'from' => $previousAssigneeId,
+                    'to' => $scopedTicket->assigned_to,
+                ],
+            ],
+            $request->user()->id
+        );
 
         return $this->success([
             'id' => $scopedTicket->id,
@@ -349,7 +398,7 @@ class TicketController extends ApiController
 
         $senderType = $request->string('sender_type')->value();
 
-            $message = TicketMessage::query()->create([
+        $message = TicketMessage::query()->create([
             'organization_id' => $organization->id,
             'ticket_id' => $scopedTicket->id,
             'sender_type' => $senderType,
@@ -361,6 +410,8 @@ class TicketController extends ApiController
         $scopedTicket->customer?->update([
             'last_contacted_at' => now(),
         ]);
+
+        TicketMessageCreated::dispatch($scopedTicket, $message, $request->user()->id);
 
         return $this->success([
             'id' => $message->id,
