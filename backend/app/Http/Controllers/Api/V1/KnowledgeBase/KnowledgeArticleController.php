@@ -124,6 +124,19 @@ class KnowledgeArticleController extends ApiController
 
         GenerateKnowledgeEmbeddingJob::dispatch($article);
 
+        app(\App\Services\AuditLogger::class)->log(
+            organizationId: $organization->id,
+            userId: $request->user()->id,
+            event: 'knowledge_article_updated',
+            targetType: 'KnowledgeBaseArticle',
+            targetId: $article->id,
+            metadata: [
+                'action' => 'created',
+                'title' => $article->title,
+                'status' => $article->status,
+            ]
+        );
+
         return $this->success([
             'id' => $article->id,
             'title' => $article->title,
@@ -150,6 +163,19 @@ class KnowledgeArticleController extends ApiController
 
         GenerateKnowledgeEmbeddingJob::dispatch($scopedArticle);
 
+        app(\App\Services\AuditLogger::class)->log(
+            organizationId: $organization->id,
+            userId: $request->user()->id,
+            event: 'knowledge_article_updated',
+            targetType: 'KnowledgeBaseArticle',
+            targetId: $scopedArticle->id,
+            metadata: [
+                'action' => 'updated',
+                'title' => $scopedArticle->title,
+                'status' => $scopedArticle->status,
+            ]
+        );
+
         return $this->success([
             'id' => $scopedArticle->id,
             'title' => $scopedArticle->title,
@@ -168,6 +194,18 @@ class KnowledgeArticleController extends ApiController
         KnowledgeBaseArticle $article
     ): JsonResponse {
         $scopedArticle = $this->resolveScopedArticle($organization, $article);
+
+        app(\App\Services\AuditLogger::class)->log(
+            organizationId: $organization->id,
+            userId: $request->user()->id,
+            event: 'knowledge_article_updated',
+            targetType: 'KnowledgeBaseArticle',
+            targetId: $scopedArticle->id,
+            metadata: [
+                'action' => 'deleted',
+                'title' => $scopedArticle->title,
+            ]
+        );
 
         $scopedArticle->delete();
 

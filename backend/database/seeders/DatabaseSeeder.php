@@ -32,6 +32,7 @@ class DatabaseSeeder extends Seeder
             [
                 'name' => 'Demo Workspace',
                 'join_code' => 'DEMO123456',
+                'webhook_token' => 'demo_webhook_token_1234567890',
                 'owner_user_id' => $user->id,
             ]
         );
@@ -319,5 +320,116 @@ class DatabaseSeeder extends Seeder
                 ]
             ]
         );
+
+        // 10. Seed beautiful, realistic Audit Logs
+        $auditLogsData = [
+            [
+                'organization_id' => $organization->id,
+                'user_id' => $user->id,
+                'event' => 'ticket_created',
+                'target_type' => 'Ticket',
+                'target_id' => $ticket1->id,
+                'metadata' => [
+                    'subject' => $ticket1->subject,
+                    'priority' => $ticket1->priority,
+                    'category' => $ticket1->category,
+                    'source_channel' => $ticket1->source_channel,
+                ],
+                'ip_address' => '127.0.0.1',
+                'user_agent' => 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)',
+                'created_at' => now()->subHours(5),
+            ],
+            [
+                'organization_id' => $organization->id,
+                'user_id' => $user->id,
+                'event' => 'ticket_created',
+                'target_type' => 'Ticket',
+                'target_id' => $ticket2->id,
+                'metadata' => [
+                    'subject' => $ticket2->subject,
+                    'priority' => $ticket2->priority,
+                    'category' => $ticket2->category,
+                    'source_channel' => $ticket2->source_channel,
+                ],
+                'ip_address' => '127.0.0.1',
+                'user_agent' => 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)',
+                'created_at' => now()->subHours(4),
+            ],
+            [
+                'organization_id' => $organization->id,
+                'user_id' => $user->id,
+                'event' => 'workflow_executed',
+                'target_type' => 'Ticket',
+                'target_id' => $ticket1->id,
+                'metadata' => [
+                    'rule_id' => $refundRule->id,
+                    'rule_name' => $refundRule->name,
+                    'status' => 'success',
+                    'actions_executed' => [
+                        [
+                            'action_type' => 'assign_to_agent',
+                            'action_value' => (string) $user->id,
+                            'result' => 'Ticket #1 assigned to Agent ID ' . $user->id,
+                        ],
+                        [
+                            'action_type' => 'add_internal_note',
+                            'action_value' => 'System: Refund ticket automatically routed to workspace Owner.',
+                            'result' => 'Note added to Ticket #1',
+                        ]
+                    ]
+                ],
+                'ip_address' => '127.0.0.1',
+                'user_agent' => 'System Engine',
+                'created_at' => now()->subHours(4)->addMinutes(5),
+            ],
+            [
+                'organization_id' => $organization->id,
+                'user_id' => $user->id,
+                'event' => 'knowledge_article_updated',
+                'target_type' => 'KnowledgeBaseArticle',
+                'target_id' => 1,
+                'metadata' => [
+                    'action' => 'created',
+                    'title' => 'Refund Policy',
+                    'status' => 'published',
+                ],
+                'ip_address' => '192.168.1.5',
+                'user_agent' => 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+                'created_at' => now()->subHours(8),
+            ],
+            [
+                'organization_id' => $organization->id,
+                'user_id' => $user->id,
+                'event' => 'knowledge_article_updated',
+                'target_type' => 'KnowledgeBaseArticle',
+                'target_id' => 2,
+                'metadata' => [
+                    'action' => 'created',
+                    'title' => 'Shipping Information',
+                    'status' => 'published',
+                ],
+                'ip_address' => '192.168.1.5',
+                'user_agent' => 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+                'created_at' => now()->subHours(7),
+            ]
+        ];
+
+        foreach ($auditLogsData as $logData) {
+            \App\Models\AuditLog::query()->firstOrCreate(
+                [
+                    'organization_id' => $logData['organization_id'],
+                    'event' => $logData['event'],
+                    'target_type' => $logData['target_type'],
+                    'target_id' => $logData['target_id'],
+                    'created_at' => $logData['created_at'],
+                ],
+                [
+                    'user_id' => $logData['user_id'],
+                    'metadata' => $logData['metadata'],
+                    'ip_address' => $logData['ip_address'],
+                    'user_agent' => $logData['user_agent'],
+                ]
+            );
+        }
     }
 }

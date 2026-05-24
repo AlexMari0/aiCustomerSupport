@@ -259,6 +259,20 @@ class TicketController extends ApiController
 
         app(\App\Services\WorkflowEngine::class)->trigger('ticket_created', $ticket);
 
+        app(\App\Services\AuditLogger::class)->log(
+            organizationId: $organization->id,
+            userId: $request->user()->id,
+            event: 'ticket_created',
+            targetType: 'Ticket',
+            targetId: $ticket->id,
+            metadata: [
+                'subject' => $ticket->subject,
+                'priority' => $ticket->priority,
+                'category' => $ticket->category,
+                'source_channel' => $ticket->source_channel,
+            ]
+        );
+
         return $this->success([
             'id' => $ticket->id,
             'subject' => $ticket->subject,
@@ -296,6 +310,18 @@ class TicketController extends ApiController
         }
 
         app(\App\Services\WorkflowEngine::class)->trigger('ticket_updated', $scopedTicket);
+
+        app(\App\Services\AuditLogger::class)->log(
+            organizationId: $organization->id,
+            userId: $request->user()->id,
+            event: 'status_changed',
+            targetType: 'Ticket',
+            targetId: $scopedTicket->id,
+            metadata: [
+                'previous_status' => $previousStatus,
+                'new_status' => $scopedTicket->status,
+            ]
+        );
 
         return $this->success([
             'id' => $scopedTicket->id,
@@ -371,6 +397,20 @@ class TicketController extends ApiController
                 ],
             ],
             $request->user()->id
+        );
+
+        $assignee = \App\Models\User::find($assigneeId);
+        app(\App\Services\AuditLogger::class)->log(
+            organizationId: $organization->id,
+            userId: $request->user()->id,
+            event: 'assigned_agent_changed',
+            targetType: 'Ticket',
+            targetId: $scopedTicket->id,
+            metadata: [
+                'previous_assignee_id' => $previousAssigneeId,
+                'new_assignee_id' => $scopedTicket->assigned_to,
+                'new_assignee_name' => $assignee?->name,
+            ]
         );
 
         return $this->success([

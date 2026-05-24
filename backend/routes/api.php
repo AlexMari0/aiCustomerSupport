@@ -17,6 +17,8 @@ Broadcast::routes([
     'middleware' => ['auth:sanctum'],
 ]);
 
+Route::post('/webhooks/inbound-message', [\App\Http\Controllers\Api\V1\Webhooks\WebhookController::class, 'inboundMessage']);
+
 Route::prefix('v1')->group(function (): void {
     Route::get('/health', HealthCheckController::class);
 
@@ -109,6 +111,20 @@ Route::prefix('v1')->group(function (): void {
                     ->middleware('organization.role:owner,admin');
                 Route::get('/tickets/{ticket}/automation-runs', [\App\Http\Controllers\Api\V1\Automations\AutomationController::class, 'ticketRuns'])
                     ->middleware('organization.role:owner,admin,agent');
+
+                // Webhooks
+                Route::get('/webhooks/logs', [\App\Http\Controllers\Api\V1\Webhooks\WebhookController::class, 'index'])
+                    ->middleware('organization.role:owner,admin');
+                Route::post('/webhooks/logs/{webhookEvent}/retry', [\App\Http\Controllers\Api\V1\Webhooks\WebhookController::class, 'retry'])
+                    ->middleware('organization.role:owner,admin');
+
+                // Analytics
+                Route::get('/analytics', [\App\Http\Controllers\Api\V1\Analytics\AnalyticsController::class, 'index'])
+                    ->middleware('organization.role:owner,admin');
+
+                // Audit Logs
+                Route::get('/audit-logs', [\App\Http\Controllers\Api\V1\Audit\AuditLogController::class, 'index'])
+                    ->middleware('organization.role:owner,admin');
             });
     });
 });

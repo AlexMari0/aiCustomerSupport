@@ -17,7 +17,7 @@ class OrganizationController extends ApiController
     {
         $organizations = $request->user()
             ->organizations()
-            ->select('organizations.id', 'organizations.name', 'organizations.slug', 'organizations.join_code', 'organizations.owner_user_id')
+            ->select('organizations.id', 'organizations.name', 'organizations.slug', 'organizations.join_code', 'organizations.webhook_token', 'organizations.owner_user_id')
             ->orderBy('organizations.name')
             ->get()
             ->map(function (Organization $organization) {
@@ -26,6 +26,7 @@ class OrganizationController extends ApiController
                     'name' => $organization->name,
                     'slug' => $organization->slug,
                     'join_code' => $organization->join_code,
+                    'webhook_token' => $organization->webhook_token,
                     'role' => $organization->pivot->role,
                 ];
             })
@@ -74,6 +75,7 @@ class OrganizationController extends ApiController
             'name' => $organization->name,
             'slug' => $organization->slug,
             'join_code' => $organization->join_code,
+            'webhook_token' => $organization->webhook_token,
             'role' => OrganizationRoles::OWNER,
         ], 'Organization created.', JsonResponse::HTTP_CREATED);
     }
@@ -85,6 +87,7 @@ class OrganizationController extends ApiController
             'name' => $organization->name,
             'slug' => $organization->slug,
             'join_code' => $organization->join_code,
+            'webhook_token' => $organization->webhook_token,
             'owner_user_id' => $organization->owner_user_id,
             'role' => $request->user()->organizationRole($organization->id),
         ], 'Organization detail retrieved.');

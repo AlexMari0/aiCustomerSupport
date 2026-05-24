@@ -71,6 +71,19 @@ class AiReplyController extends ApiController
             ],
         ]);
 
+        app(\App\Services\AuditLogger::class)->log(
+            organizationId: $organization->id,
+            userId: $request->user()?->id,
+            event: 'ai_reply_generated',
+            targetType: 'Ticket',
+            targetId: $ticket->id,
+            metadata: [
+                'suggestion_id' => $suggestion->id,
+                'referenced_article_ids' => $matchedArticles->pluck('id')->toArray(),
+                'referenced_article_titles' => $matchedArticles->pluck('title')->toArray(),
+            ]
+        );
+
         // 7. Get suggestion history for this ticket
         $history = AiSuggestion::query()
             ->where('ticket_id', $ticket->id)

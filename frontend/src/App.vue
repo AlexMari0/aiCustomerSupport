@@ -114,6 +114,41 @@ const assignAssigneeId = ref("")
 const automationRules = ref<any[]>([])
 const automationRuns = ref<any[]>([])
 const showRuleModal = ref(false)
+
+// 📊 Analytics State
+const analyticsData = ref<any>(null)
+const analyticsLoading = ref(false)
+
+// 🔌 Webhooks & Simulation Sandbox State
+const webhookLogs = ref<any[]>([])
+const webhookLogsLoading = ref(false)
+const sendingWebhook = ref(false)
+const showWebhookDetailModal = ref(false)
+const selectedWebhookLog = ref<any | null>(null)
+
+const simulatorChannel = ref("whatsapp")
+const waPhone = ref("08123456789")
+const waName = ref("Budi WhatsApp")
+const waMessage = ref("I bought order #98721, but it failed to compile enterprise features. I want a refund!")
+
+const emailAddress = ref("jane@example.com")
+const emailName = ref("Jane Email")
+const emailSubject = ref("Order Delivery Status Query")
+const emailMessage = ref("I placed my order 4 days ago but haven't received standard tracking link yet. Please check shipping.")
+
+const chatName = ref("Calvin Chat")
+const chatEmail = ref("calvin@chat.com")
+const chatMessage = ref("Hello! Can I change my order delivery address?")
+
+const formName = ref("Alice Support")
+const formEmail = ref("alice@merchant.com")
+const formSubject = ref("URGENT: Requesting full refund")
+const formMessage = ref("I purchased standard but we need enterprise license immediately. Refund order #98721 please.")
+
+const currentOrgWebhookToken = computed(() => {
+  const org = organizations.value.find(o => o.id === selectedOrganizationId.value)
+  return org?.webhook_token ?? ""
+})
 const ruleForm = ref({
   name: "",
   trigger_type: "ticket_created",
@@ -127,8 +162,27 @@ const realtimeState = ref<"disconnected" | "connecting" | "connected">("disconne
 const realtimeNotifications = ref<Array<{ id: number; text: string; created_at: string }>>([])
 const typingIndicator = ref("")
 
-const activeTab = ref<"dashboard" | "knowledge-base" | "automations">("dashboard")
+const activeTab = ref<"dashboard" | "knowledge-base" | "automations" | "integrations" | "analytics" | "audit-logs">("dashboard")
 const canManageKB = computed(() => roleForSelectedOrganization.value === "owner" || roleForSelectedOrganization.value === "admin")
+
+const auditLogs = ref<any[]>([])
+const auditLogsLoading = ref(false)
+const auditSearchQuery = ref("")
+const selectedAuditLog = ref<any | null>(null)
+const showAuditDetailModal = ref(false)
+
+const filteredAuditLogs = computed(() => {
+  if (!auditSearchQuery.value) {
+    return auditLogs.value
+  }
+  const q = auditSearchQuery.value.toLowerCase()
+  return auditLogs.value.filter(log => {
+    const userMatch = log.user?.name?.toLowerCase().includes(q) || log.user?.email?.toLowerCase().includes(q)
+    const eventMatch = log.event?.toLowerCase().includes(q)
+    const targetMatch = log.target_type?.toLowerCase().includes(q)
+    return userMatch || eventMatch || targetMatch
+  })
+})
 
 const kbCategories = ref<any[]>([])
 const kbArticles = ref<any[]>([])
@@ -901,6 +955,131 @@ async function runClassification(): Promise<void> {
   setMessage("Ticket AI classification completed.")
 }
 
+async function loadAnalyticsData(): Promise<void> {
+  if (selectedOrganizationId.value === null) {
+    return
+  }
+  analyticsLoading.value = true
+  const response = await getJson<any>(
+    `/organizations/${selectedOrganizationId.value}/analytics`,
+    token.value,
+  )
+  analyticsLoading.value = false
+  if (response.success) {
+    analyticsData.value = response.data
+  }
+}
+
+async function loadWebhooksData(): Promise<void> {
+  if (selectedOrganizationId.value === null) {
+    return
+  }
+  webhookLogsLoading.value = true
+  const response = await getJson<any[]>(
+    `/organizations/${selectedOrganizationId.value}/webhooks/logs`,
+    token.value,
+  )
+  webhookLogsLoading.value = false
+  if (response.success) {
+    webhookLogs.value = (response as ApiSuccessResponse<any[]>).data
+  }
+}
+
+async function loadAuditLogsData(): Promise<void> {
+  if (selectedOrganizationId.value === null) {
+    return
+  }
+  auditLogsLoading.value = true
+  const response = await getJson<any[]>(
+    `/organizations/${selectedOrganizationId.value}/audit-logs`,
+    token.value,
+  )
+  auditLogsLoading.value = false
+  if (response.success) {
+    auditLogs.value = (response as ApiSuccessResponse<any[]>).data
+  }
+}
+
+async function simulateWebhook(): Promise<void> {
+  if (!currentOrgWebhookToken.value) {
+    setMessage("Error: No webhook token found for this organization.")
+    return
+  }
+  sendingWebhook.value = true
+  let payload: any = {}
+  if (simulatorChannel.value === "whatsapp") {
+    payload = {
+      channel: "whatsapp",
+      customer_name: waName.value,
+      customer_phone: waPhone.value,
+      message: waMessage.value,
+    }
+  } else if (simulatorChannel.value === "email") {
+    payload = {
+      channel: "email",
+      customer_name: emailName.value,
+      customer_email: emailAddress.value,
+      subject: emailSubject.value,
+      message: emailMessage.value,
+    }
+  } else if (simulatorChannel.value === "website_chat") {
+    payload = {
+      channel: "website_chat",
+      customer_name: chatName.value,
+      customer_email: chatEmail.value,
+      message: chatMessage.value,
+    }
+  } else if (simulatorChannel.value === "public_form") {
+    payload = {
+      channel: "public_form",
+      customer_name: formName.value,
+      customer_email: formEmail.value,
+      subject: formSubject.value,
+      message: formMessage.value,
+    }
+  }
+
+  const response = await postJson(
+    `/webhooks/inbound-message?token=${currentOrgWebhookToken.value}`,
+    payload,
+    token.value
+  )
+
+  sendingWebhook.value = false
+  if (response.success) {
+    setMessage("Simulated webhook event ingested successfully! Process job queued.")
+    // Reset message field to make it feel responsive
+    if (simulatorChannel.value === "whatsapp") waMessage.value = ""
+    else if (simulatorChannel.value === "email") emailMessage.value = ""
+    else if (simulatorChannel.value === "website_chat") chatMessage.value = ""
+    else if (simulatorChannel.value === "public_form") formMessage.value = ""
+    
+    await loadWebhooksData()
+  } else {
+    setMessage("Failed to send webhook simulation: " + response.message)
+  }
+}
+
+async function retryWebhookLog(webhookLogId: number): Promise<void> {
+  if (selectedOrganizationId.value === null) {
+    return
+  }
+  const response = await postJson(
+    `/organizations/${selectedOrganizationId.value}/webhooks/logs/${webhookLogId}/retry`,
+    {},
+    token.value
+  )
+  if (response.success) {
+    setMessage("Webhook event retry scheduled successfully!")
+    await loadWebhooksData()
+    if (selectedWebhookLog.value && selectedWebhookLog.value.id === webhookLogId) {
+      selectedWebhookLog.value.status = "pending"
+    }
+  } else {
+    setMessage("Failed to retry webhook event: " + response.message)
+  }
+}
+
 async function loadAutomationsData(): Promise<void> {
   if (selectedOrganizationId.value === null) {
     return
@@ -1525,6 +1704,28 @@ onBeforeUnmount(() => {
           >
             ⚡ Automations
           </button>
+          <button
+            class="flex-1 py-2 text-sm font-semibold rounded-lg transition-all duration-200 flex items-center justify-center gap-1"
+            :class="activeTab === 'integrations' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'"
+            @click="activeTab = 'integrations'; loadWebhooksData()"
+          >
+            🔌 Channels & Webhooks
+          </button>
+          <button
+            class="flex-1 py-2 text-sm font-semibold rounded-lg transition-all duration-200 flex items-center justify-center gap-1"
+            :class="activeTab === 'analytics' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'"
+            @click="activeTab = 'analytics'; loadAnalyticsData()"
+          >
+            📊 Analytics
+          </button>
+          <button
+            v-if="roleForSelectedOrganization === 'owner' || roleForSelectedOrganization === 'admin'"
+            class="flex-1 py-2 text-sm font-semibold rounded-lg transition-all duration-200 flex items-center justify-center gap-1"
+            :class="activeTab === 'audit-logs' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'"
+            @click="activeTab = 'audit-logs'; loadAuditLogsData()"
+          >
+            📋 Audit Logs
+          </button>
         </div>
 
         <!-- ⚡ Automations Tab Content -->
@@ -1648,6 +1849,915 @@ onBeforeUnmount(() => {
                 </p>
               </div>
             </article>
+          </div>
+        </div>
+
+        <!-- 🔌 Integrations & Simulation Sandbox Tab Content -->
+        <div v-if="activeTab === 'integrations'" class="space-y-4">
+          <div class="flex items-center justify-between">
+            <div>
+              <h2 class="text-lg font-bold text-slate-900">Simulation Sandbox & Inbound Channels</h2>
+              <p class="text-xs text-slate-500">Test inbound customer messages from external sources (WhatsApp, Email, Chat, Public Form) using the organization Webhook.</p>
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="text-[11px] font-mono bg-slate-100 border border-slate-200 text-slate-600 px-2.5 py-1 rounded-lg">
+                Webhook Token: <span class="font-bold text-slate-800">{{ currentOrgWebhookToken || "None" }}</span>
+              </span>
+            </div>
+          </div>
+
+          <div class="grid gap-4 lg:grid-cols-12">
+            <!-- Left Column: Simulators Sandbox Forms (col-span-5) -->
+            <article class="lg:col-span-5 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm space-y-4">
+              <div class="flex items-center justify-between border-b border-slate-100 pb-2.5">
+                <h3 class="text-sm font-bold text-slate-800">🔌 Channel Sandbox Simulators</h3>
+                <span class="bg-blue-50 text-blue-700 font-bold px-2 py-0.5 rounded-full text-[10px]">ACTIVE</span>
+              </div>
+
+              <!-- Channel Selector Tabs -->
+              <div class="grid grid-cols-4 gap-1 bg-slate-50 border border-slate-150 p-1 rounded-xl text-center">
+                <button
+                  v-for="ch in ['whatsapp', 'email', 'website_chat', 'public_form']"
+                  :key="ch"
+                  @click="simulatorChannel = ch"
+                  class="py-1.5 text-[10px] font-bold rounded-lg transition-all cursor-pointer capitalize"
+                  :class="simulatorChannel === ch ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'"
+                >
+                  {{ ch.replace('_', ' ') }}
+                </button>
+              </div>
+
+              <!-- Form for WhatsApp Simulator -->
+              <form v-if="simulatorChannel === 'whatsapp'" @submit.prevent="simulateWebhook" class="space-y-3 pt-1">
+                <div class="space-y-1">
+                  <label class="text-[11px] font-bold text-slate-700 block">Customer Name</label>
+                  <input
+                    v-model="waName"
+                    type="text"
+                    required
+                    class="w-full rounded-lg border border-slate-200 px-3 py-1.5 text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                    placeholder="Budi WhatsApp"
+                  />
+                </div>
+                <div class="space-y-1">
+                  <label class="text-[11px] font-bold text-slate-700 block">WhatsApp Phone (International)</label>
+                  <input
+                    v-model="waPhone"
+                    type="text"
+                    required
+                    class="w-full rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-mono focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                    placeholder="08123456789"
+                  />
+                </div>
+                <div class="space-y-1">
+                  <label class="text-[11px] font-bold text-slate-700 block">Message Body</label>
+                  <textarea
+                    v-model="waMessage"
+                    required
+                    rows="4"
+                    class="w-full rounded-lg border border-slate-200 px-3 py-1.5 text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                    placeholder="Type WhatsApp message..."
+                  ></textarea>
+                </div>
+                <button
+                  type="submit"
+                  :disabled="sendingWebhook"
+                  class="w-full py-2 bg-gradient-to-r from-emerald-600 to-green-500 hover:from-emerald-700 hover:to-green-600 text-white rounded-lg text-xs font-semibold shadow transition disabled:opacity-50 cursor-pointer"
+                >
+                  {{ sendingWebhook ? "Sending Webhook..." : "📱 Send Inbound WhatsApp Message" }}
+                </button>
+              </form>
+
+              <!-- Form for Email Simulator -->
+              <form v-if="simulatorChannel === 'email'" @submit.prevent="simulateWebhook" class="space-y-3 pt-1">
+                <div class="grid grid-cols-2 gap-2">
+                  <div class="space-y-1">
+                    <label class="text-[11px] font-bold text-slate-700 block">Customer Name</label>
+                    <input
+                      v-model="emailName"
+                      type="text"
+                      required
+                      class="w-full rounded-lg border border-slate-200 px-3 py-1.5 text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                      placeholder="Jane Email"
+                    />
+                  </div>
+                  <div class="space-y-1">
+                    <label class="text-[11px] font-bold text-slate-700 block">Customer Email</label>
+                    <input
+                      v-model="emailAddress"
+                      type="email"
+                      required
+                      class="w-full rounded-lg border border-slate-200 px-3 py-1.5 text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                      placeholder="jane@example.com"
+                    />
+                  </div>
+                </div>
+                <div class="space-y-1">
+                  <label class="text-[11px] font-bold text-slate-700 block">Email Subject</label>
+                  <input
+                    v-model="emailSubject"
+                    type="text"
+                    required
+                    class="w-full rounded-lg border border-slate-200 px-3 py-1.5 text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                    placeholder="Inquiry subject..."
+                  />
+                </div>
+                <div class="space-y-1">
+                  <label class="text-[11px] font-bold text-slate-700 block">Email Body Content</label>
+                  <textarea
+                    v-model="emailMessage"
+                    required
+                    rows="4"
+                    class="w-full rounded-lg border border-slate-200 px-3 py-1.5 text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                    placeholder="Type email body..."
+                  ></textarea>
+                </div>
+                <button
+                  type="submit"
+                  :disabled="sendingWebhook"
+                  class="w-full py-2 bg-gradient-to-r from-blue-600 to-indigo-500 hover:from-blue-700 hover:to-indigo-600 text-white rounded-lg text-xs font-semibold shadow transition disabled:opacity-50 cursor-pointer"
+                >
+                  {{ sendingWebhook ? "Sending Webhook..." : "✉ Receive Inbound Support Email" }}
+                </button>
+              </form>
+
+              <!-- Form for Website Chat Simulator -->
+              <form v-if="simulatorChannel === 'website_chat'" @submit.prevent="simulateWebhook" class="space-y-3 pt-1">
+                <div class="grid grid-cols-2 gap-2">
+                  <div class="space-y-1">
+                    <label class="text-[11px] font-bold text-slate-700 block">Customer Name</label>
+                    <input
+                      v-model="chatName"
+                      type="text"
+                      required
+                      class="w-full rounded-lg border border-slate-200 px-3 py-1.5 text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                      placeholder="Calvin Chat"
+                    />
+                  </div>
+                  <div class="space-y-1">
+                    <label class="text-[11px] font-bold text-slate-700 block">Customer Email</label>
+                    <input
+                      v-model="chatEmail"
+                      type="email"
+                      required
+                      class="w-full rounded-lg border border-slate-200 px-3 py-1.5 text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                      placeholder="calvin@chat.com"
+                    />
+                  </div>
+                </div>
+                <div class="space-y-1">
+                  <label class="text-[11px] font-bold text-slate-700 block">Live Chat Message</label>
+                  <textarea
+                    v-model="chatMessage"
+                    required
+                    rows="5"
+                    class="w-full rounded-lg border border-slate-200 px-3 py-1.5 text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                    placeholder="Type live chat message..."
+                  ></textarea>
+                </div>
+                <button
+                  type="submit"
+                  :disabled="sendingWebhook"
+                  class="w-full py-2 bg-gradient-to-r from-sky-500 to-blue-400 hover:from-sky-600 hover:to-blue-500 text-white rounded-lg text-xs font-semibold shadow transition disabled:opacity-50 cursor-pointer"
+                >
+                  {{ sendingWebhook ? "Sending Webhook..." : "💬 Simulate Live Chat Widget Message" }}
+                </button>
+              </form>
+
+              <!-- Form for Public Support Form Simulator -->
+              <form v-if="simulatorChannel === 'public_form'" @submit.prevent="simulateWebhook" class="space-y-3 pt-1">
+                <div class="grid grid-cols-2 gap-2">
+                  <div class="space-y-1">
+                    <label class="text-[11px] font-bold text-slate-700 block">Contact Name</label>
+                    <input
+                      v-model="formName"
+                      type="text"
+                      required
+                      class="w-full rounded-lg border border-slate-200 px-3 py-1.5 text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                      placeholder="Alice Support"
+                    />
+                  </div>
+                  <div class="space-y-1">
+                    <label class="text-[11px] font-bold text-slate-700 block">Contact Email</label>
+                    <input
+                      v-model="formEmail"
+                      type="email"
+                      required
+                      class="w-full rounded-lg border border-slate-200 px-3 py-1.5 text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                      placeholder="alice@merchant.com"
+                    />
+                  </div>
+                </div>
+                <div class="space-y-1">
+                  <label class="text-[11px] font-bold text-slate-700 block">Ticket Subject</label>
+                  <input
+                    v-model="formSubject"
+                    type="text"
+                    required
+                    class="w-full rounded-lg border border-slate-200 px-3 py-1.5 text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                    placeholder="Subject..."
+                  />
+                </div>
+                <div class="space-y-1">
+                  <label class="text-[11px] font-bold text-slate-700 block">Support Message Description</label>
+                  <textarea
+                    v-model="formMessage"
+                    required
+                    rows="3"
+                    class="w-full rounded-lg border border-slate-200 px-3 py-1.5 text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                    placeholder="Type support inquiry detail..."
+                  ></textarea>
+                </div>
+                <button
+                  type="submit"
+                  :disabled="sendingWebhook"
+                  class="w-full py-2 bg-gradient-to-r from-purple-600 to-indigo-500 hover:from-purple-700 hover:to-indigo-600 text-white rounded-lg text-xs font-semibold shadow transition disabled:opacity-50 cursor-pointer"
+                >
+                  {{ sendingWebhook ? "Submitting..." : "📝 Submit Public Helpdesk Support Form" }}
+                </button>
+              </form>
+            </article>
+
+            <!-- Right Column: Inbound Webhook Execution Logs Console (col-span-7) -->
+            <article class="lg:col-span-7 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm flex flex-col min-h-[480px]">
+              <div class="flex items-center justify-between border-b border-slate-100 pb-2.5 mb-3">
+                <div class="flex items-center gap-2">
+                  <h3 class="text-sm font-bold text-slate-800">⚡ Inbound Webhook Events Log</h3>
+                  <button
+                    @click="loadWebhooksData"
+                    class="text-slate-400 hover:text-slate-700 text-xs font-medium flex items-center gap-0.5 cursor-pointer"
+                  >
+                    ⟳ Refresh
+                  </button>
+                </div>
+                <span class="text-[11px] text-slate-500">Only visible to Workspace Owners/Admins</span>
+              </div>
+
+              <!-- Loading Skeleton -->
+              <div v-if="webhookLogsLoading" class="space-y-3 flex-1 flex flex-col justify-center py-12">
+                <div class="animate-pulse flex space-x-4 max-w-md mx-auto w-full">
+                  <div class="flex-1 space-y-4 py-1">
+                    <div class="h-4 bg-slate-200 rounded w-3/4"></div>
+                    <div class="space-y-2">
+                      <div class="h-3 bg-slate-200 rounded"></div>
+                      <div class="h-3 bg-slate-200 rounded w-5/6"></div>
+                    </div>
+                  </div>
+                </div>
+                <p class="text-center text-xs text-slate-400">Fetching logs console...</p>
+              </div>
+
+              <!-- Empty State -->
+              <div v-else-if="webhookLogs.length === 0" class="flex-1 flex flex-col items-center justify-center py-12 text-center">
+                <span class="text-3xl">🔌</span>
+                <h4 class="text-sm font-bold text-slate-700 mt-2">No Inbound Webhooks Ingested</h4>
+                <p class="text-xs text-slate-500 max-w-sm mt-1">
+                  Use the Sandbox Channel Simulators on the left to trigger inbound messages. They will call the webhook and show up here in real time.
+                </p>
+              </div>
+
+              <!-- Logs Table -->
+              <div v-else class="flex-1 overflow-x-auto">
+                <table class="min-w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr class="text-slate-400 font-bold border-b border-slate-100 text-[10px] uppercase">
+                      <th class="py-2 pr-2">ID</th>
+                      <th class="py-2 px-2">Channel</th>
+                      <th class="py-2 px-2">Status</th>
+                      <th class="py-2 px-2">Retries</th>
+                      <th class="py-2 px-2">Created At</th>
+                      <th class="py-2 pl-2 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-slate-50 font-medium text-slate-700">
+                    <tr v-for="log in webhookLogs" :key="log.id" class="hover:bg-slate-50/50 transition">
+                      <td class="py-2.5 pr-2 font-mono text-[10px] text-slate-400">#{{ log.id }}</td>
+                      <td class="py-2.5 px-2">
+                        <span
+                          class="px-2 py-0.5 rounded-full text-[10px] font-bold capitalize"
+                          :class="{
+                            'bg-emerald-50 text-emerald-700 border border-emerald-100': log.channel === 'whatsapp',
+                            'bg-blue-50 text-blue-700 border border-blue-100': log.channel === 'email',
+                            'bg-sky-50 text-sky-700 border border-sky-100': log.channel === 'website_chat',
+                            'bg-purple-50 text-purple-700 border border-purple-100': log.channel === 'public_form',
+                          }"
+                        >
+                          {{ log.channel.replace('_', ' ') }}
+                        </span>
+                      </td>
+                      <td class="py-2.5 px-2">
+                        <span
+                          class="px-2 py-0.5 rounded-full text-[10px] font-bold capitalize"
+                          :class="{
+                            'bg-green-100 text-green-800': log.status === 'processed',
+                            'bg-amber-100 text-amber-800': log.status === 'pending' || log.status === 'processing',
+                            'bg-red-100 text-red-800': log.status === 'failed',
+                          }"
+                        >
+                          {{ log.status }}
+                        </span>
+                      </td>
+                      <td class="py-2.5 px-2 font-mono text-[11px] text-slate-500">{{ log.retry_count }}</td>
+                      <td class="py-2.5 px-2 text-[10px] text-slate-500 font-mono">{{ new Date(log.created_at).toLocaleTimeString() }}</td>
+                      <td class="py-2.5 pl-2 text-right space-x-1.5">
+                        <button
+                          @click="selectedWebhookLog = log; showWebhookDetailModal = true"
+                          class="text-blue-600 hover:text-blue-800 font-bold hover:underline cursor-pointer"
+                        >
+                          Inspect
+                        </button>
+                        <button
+                          v-if="log.status === 'failed'"
+                          @click="retryWebhookLog(log.id)"
+                          class="text-amber-600 hover:text-amber-800 font-bold hover:underline cursor-pointer"
+                        >
+                          Retry
+                        </button>
+                        <button
+                          v-if="log.status === 'processed' && log.ticket_id"
+                          @click="activeTab = 'dashboard'; selectedTicketId = log.ticket_id; loadTickets(); selectTicket(log.ticket_id)"
+                          class="text-emerald-600 hover:text-emerald-800 font-bold hover:underline cursor-pointer flex items-center justify-end gap-0.5 inline-flex"
+                        >
+                          Go to Ticket ↗
+                        </button>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </article>
+          </div>
+        </div>
+
+        <!-- 🔌 Webhook Logs Detail Modal Inspector -->
+        <div
+          v-if="showWebhookDetailModal && selectedWebhookLog"
+          class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs"
+        >
+          <div class="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-xl space-y-4 flex flex-col max-h-[90vh]">
+            <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div class="flex items-center gap-2">
+                <h3 class="text-base font-bold text-slate-900">Webhook Log Inspector</h3>
+                <span class="font-mono text-xs text-slate-400">#{{ selectedWebhookLog.id }}</span>
+              </div>
+              <button
+                @click="showWebhookDetailModal = false; selectedWebhookLog = null"
+                class="text-slate-400 hover:text-slate-600 text-lg font-bold cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div class="flex-1 overflow-y-auto space-y-3.5 pr-1 font-medium">
+              <!-- Grid Metadata -->
+              <div class="grid grid-cols-3 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-150 text-xs">
+                <div>
+                  <span class="text-slate-400 font-bold block mb-0.5">CHANNEL</span>
+                  <span class="capitalize text-slate-800 font-extrabold">{{ selectedWebhookLog.channel.replace('_', ' ') }}</span>
+                </div>
+                <div>
+                  <span class="text-slate-400 font-bold block mb-0.5">STATUS</span>
+                  <span
+                    class="px-2 py-0.5 rounded-full text-[10px] font-bold capitalize"
+                    :class="{
+                      'bg-green-150 text-green-800': selectedWebhookLog.status === 'processed',
+                      'bg-amber-150 text-amber-800': selectedWebhookLog.status === 'pending' || selectedWebhookLog.status === 'processing',
+                      'bg-red-150 text-red-800': selectedWebhookLog.status === 'failed',
+                    }"
+                  >
+                    {{ selectedWebhookLog.status }}
+                  </span>
+                </div>
+                <div>
+                  <span class="text-slate-400 font-bold block mb-0.5">TOTAL RETRIES</span>
+                  <span class="text-slate-800 font-mono font-extrabold">{{ selectedWebhookLog.retry_count }}</span>
+                </div>
+              </div>
+
+              <!-- Raw Payload JSON Code Block -->
+              <div class="space-y-1">
+                <h4 class="text-xs font-bold text-slate-700">Raw JSON Payload Data</h4>
+                <pre class="bg-slate-900 text-slate-200 p-4 rounded-xl text-left text-[11px] font-mono overflow-x-auto max-h-48 border border-slate-950">{{ JSON.stringify(selectedWebhookLog.payload, null, 2) }}</pre>
+              </div>
+
+              <!-- Error Traceback if failed -->
+              <div v-if="selectedWebhookLog.status === 'failed' && selectedWebhookLog.error_message" class="space-y-1">
+                <h4 class="text-xs font-bold text-red-700">Error Exception Traceback</h4>
+                <pre class="bg-red-50/50 text-red-800 p-4 rounded-xl text-left text-[10px] font-mono overflow-x-auto max-h-48 border border-red-100">{{ selectedWebhookLog.error_message }}</pre>
+              </div>
+            </div>
+
+            <div class="flex items-center justify-between border-t border-slate-100 pt-3">
+              <button
+                v-if="selectedWebhookLog.status === 'failed'"
+                @click="retryWebhookLog(selectedWebhookLog.id)"
+                class="rounded-lg bg-amber-600 hover:bg-amber-700 px-4 py-2 text-xs font-bold text-white transition cursor-pointer"
+              >
+                ⟳ Retry Webhook Event Job
+              </button>
+              <button
+                v-if="selectedWebhookLog.status === 'processed' && selectedWebhookLog.ticket_id"
+                @click="showWebhookDetailModal = false; activeTab = 'dashboard'; selectedTicketId = selectedWebhookLog.ticket_id; loadTickets(); selectTicket(selectedWebhookLog.ticket_id)"
+                class="rounded-lg bg-emerald-600 hover:bg-emerald-700 px-4 py-2 text-xs font-bold text-white transition cursor-pointer"
+              >
+                Go to Resulting Ticket ↗
+              </button>
+              <div class="flex-1"></div>
+              <button
+                @click="showWebhookDetailModal = false; selectedWebhookLog = null"
+                class="rounded-lg border border-slate-200 hover:bg-slate-50 px-4 py-2 text-xs font-bold text-slate-700 transition cursor-pointer"
+              >
+                Close Inspector
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 📋 Audit Log Detail Modal Inspector -->
+        <div
+          v-if="showAuditDetailModal && selectedAuditLog"
+          class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs"
+        >
+          <div class="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-xl space-y-4 flex flex-col max-h-[90vh]">
+            <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div class="flex items-center gap-2">
+                <h3 class="text-base font-bold text-slate-900">Audit Log Inspector</h3>
+                <span class="font-mono text-xs text-slate-400">#{{ selectedAuditLog.id }}</span>
+              </div>
+              <button
+                @click="showAuditDetailModal = false; selectedAuditLog = null"
+                class="text-slate-400 hover:text-slate-600 text-lg font-bold cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div class="flex-1 overflow-y-auto space-y-3.5 pr-1 font-medium">
+              <!-- Grid Metadata -->
+              <div class="grid grid-cols-3 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-155 text-xs">
+                <div>
+                  <span class="text-slate-400 font-bold block mb-0.5 text-left">EVENT</span>
+                  <span class="capitalize text-slate-800 font-extrabold text-left block">{{ selectedAuditLog.event.replace('_', ' ') }}</span>
+                </div>
+                <div>
+                  <span class="text-slate-400 font-bold block mb-0.5 text-left">OPERATOR</span>
+                  <span class="text-slate-800 font-extrabold text-left block">{{ selectedAuditLog.user ? selectedAuditLog.user.name : 'System Engine' }}</span>
+                </div>
+                <div>
+                  <span class="text-slate-400 font-bold block mb-0.5 text-left">TIMESTAMP</span>
+                  <span class="text-slate-800 font-mono font-extrabold text-left block">{{ new Date(selectedAuditLog.created_at).toLocaleString() }}</span>
+                </div>
+              </div>
+
+              <!-- Raw Metadata JSON Code Block -->
+              <div class="space-y-1 text-left">
+                <h4 class="text-xs font-bold text-slate-700">Metadata JSON Payload</h4>
+                <pre class="bg-slate-900 text-slate-200 p-4 rounded-xl text-left text-[11px] font-mono overflow-x-auto max-h-64 border border-slate-950">{{ JSON.stringify(selectedAuditLog.metadata, null, 2) }}</pre>
+              </div>
+
+              <!-- Connection Data -->
+              <div class="space-y-1 bg-slate-50 p-3 rounded-xl border border-slate-155 text-xs font-medium text-left">
+                <div class="flex justify-between py-1 border-b border-slate-150">
+                  <span class="text-slate-400 font-bold">IP Address</span>
+                  <span class="font-mono font-bold text-slate-700 text-right">{{ selectedAuditLog.ip_address || 'None' }}</span>
+                </div>
+                <div class="flex justify-between py-1">
+                  <span class="text-slate-400 font-bold">User Agent</span>
+                  <span class="font-mono text-slate-600 truncate max-w-sm text-right" :title="selectedAuditLog.user_agent">{{ selectedAuditLog.user_agent || 'None' }}</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="flex items-center justify-between border-t border-slate-100 pt-3">
+              <button
+                v-if="selectedAuditLog.target_type === 'Ticket' && selectedAuditLog.target_id"
+                @click="showAuditDetailModal = false; activeTab = 'dashboard'; selectedTicketId = selectedAuditLog.target_id; loadTickets(); selectTicket(selectedAuditLog.target_id)"
+                class="rounded-lg bg-blue-600 hover:bg-blue-700 px-4 py-2 text-xs font-bold text-white transition cursor-pointer"
+              >
+                Go to Ticket ↗
+              </button>
+              <div class="flex-1"></div>
+              <button
+                @click="showAuditDetailModal = false; selectedAuditLog = null"
+                class="rounded-lg border border-slate-200 hover:bg-slate-50 px-4 py-2 text-xs font-bold text-slate-700 transition cursor-pointer"
+              >
+                Close Inspector
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 📊 Analytics Tab Content -->
+        <div v-if="activeTab === 'analytics'" class="space-y-4">
+          <div class="flex items-center justify-between">
+            <div>
+              <h2 class="text-lg font-bold text-slate-900">Support Operations Analytics</h2>
+              <p class="text-xs text-slate-500">Real-time performance logs, ticket distributions, AI assistant workloads, and team efficiency metrics.</p>
+            </div>
+            <button
+              @click="loadAnalyticsData"
+              class="rounded-lg bg-blue-50 border border-blue-200 hover:bg-blue-100 px-3.5 py-1.5 text-xs font-semibold text-blue-600 transition flex items-center gap-1 cursor-pointer"
+            >
+              ⟳ Refresh Data
+            </button>
+          </div>
+
+          <!-- Loading Skeleton -->
+          <div v-if="analyticsLoading" class="space-y-4 py-20">
+            <div class="animate-pulse grid gap-4 md:grid-cols-4 max-w-5xl mx-auto w-full">
+              <div v-for="i in 4" :key="i" class="h-24 bg-slate-200 rounded-2xl"></div>
+            </div>
+            <p class="text-center text-xs text-slate-400">Loading analytics metrics...</p>
+          </div>
+
+          <!-- Empty State -->
+          <div v-else-if="!analyticsData || analyticsData.total_tickets === 0" class="rounded-2xl border border-slate-200 bg-white p-12 text-center shadow-sm">
+            <span class="text-4xl">📊</span>
+            <h3 class="text-base font-bold text-slate-800 mt-3">No Analytics Data Found</h3>
+            <p class="text-xs text-slate-500 mt-1 max-w-sm mx-auto">Create and process customer tickets to populate these summaries and performance charts.</p>
+          </div>
+
+          <div v-else class="space-y-4">
+            <!-- Grid 1: Summary Metric Tiles -->
+            <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <!-- Total Volume Card -->
+              <div class="rounded-2xl border border-blue-100 bg-gradient-to-tr from-blue-50/30 to-white p-4 shadow-sm relative overflow-hidden flex flex-col justify-between min-h-[96px]">
+                <div class="flex items-center justify-between">
+                  <span class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Total Tickets</span>
+                  <span class="text-blue-500 text-lg">📁</span>
+                </div>
+                <div class="mt-2 flex items-baseline gap-1.5">
+                  <span class="text-2xl font-black text-slate-900 leading-none">{{ analyticsData.total_tickets }}</span>
+                  <span class="text-[10px] text-slate-500 font-bold">inbound tickets</span>
+                </div>
+                <div class="absolute bottom-0 right-0 opacity-5 text-6xl select-none translate-x-2 translate-y-2">📁</div>
+              </div>
+
+              <!-- Active Load Card -->
+              <div class="rounded-2xl border border-amber-100 bg-gradient-to-tr from-amber-50/20 to-white p-4 shadow-sm relative overflow-hidden flex flex-col justify-between min-h-[96px]">
+                <div class="flex items-center justify-between">
+                  <span class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Active Load</span>
+                  <span class="text-amber-500 text-lg">⚡</span>
+                </div>
+                <div class="mt-2 flex items-baseline gap-1.5">
+                  <span class="text-2xl font-black text-slate-900 leading-none">
+                    {{ analyticsData.tickets_by_status.open + analyticsData.tickets_by_status.pending }}
+                  </span>
+                  <span class="text-[10px] text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded font-extrabold">
+                    {{ analyticsData.tickets_by_status.open }} open / {{ analyticsData.tickets_by_status.pending }} pending
+                  </span>
+                </div>
+                <div class="absolute bottom-0 right-0 opacity-5 text-6xl select-none translate-x-2 translate-y-2">⚡</div>
+              </div>
+
+              <!-- Resolved Ratio Card -->
+              <div class="rounded-2xl border border-emerald-100 bg-gradient-to-tr from-emerald-50/20 to-white p-4 shadow-sm relative overflow-hidden flex flex-col justify-between min-h-[96px]">
+                <div class="flex items-center justify-between">
+                  <span class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Resolved Ratio</span>
+                  <span class="text-emerald-500 text-lg">✓</span>
+                </div>
+                <div class="mt-2 flex items-baseline gap-1.5">
+                  <span class="text-2xl font-black text-slate-900 leading-none">
+                    {{ Math.round(((analyticsData.tickets_by_status.resolved + analyticsData.tickets_by_status.closed) / analyticsData.total_tickets) * 100) }}%
+                  </span>
+                  <span class="text-[10px] text-slate-500 font-bold">
+                    {{ analyticsData.tickets_by_status.resolved + analyticsData.tickets_by_status.closed }} resolved
+                  </span>
+                </div>
+                <div class="absolute bottom-0 right-0 opacity-5 text-6xl select-none translate-x-2 translate-y-2">✓</div>
+              </div>
+
+              <!-- Response Time Card -->
+              <div class="rounded-2xl border border-purple-100 bg-gradient-to-tr from-purple-50/20 to-white p-4 shadow-sm relative overflow-hidden flex flex-col justify-between min-h-[96px]">
+                <div class="flex items-center justify-between">
+                  <span class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Avg Response Speed</span>
+                  <span class="text-purple-500 text-lg">⏱</span>
+                </div>
+                <div class="mt-2 flex items-baseline gap-1.5">
+                  <span class="text-2xl font-black text-slate-900 leading-none">
+                    {{ analyticsData.avg_response_time_seconds ? (analyticsData.avg_response_time_seconds < 60 ? analyticsData.avg_response_time_seconds + 's' : Math.floor(analyticsData.avg_response_time_seconds / 60) + 'm ' + (analyticsData.avg_response_time_seconds % 60) + 's') : 'None' }}
+                  </span>
+                  <span class="text-[10px] text-slate-500 font-bold">first agent response</span>
+                </div>
+                <div class="absolute bottom-0 right-0 opacity-5 text-6xl select-none translate-x-2 translate-y-2">⏱</div>
+              </div>
+            </div>
+
+            <!-- Grid 2: AI & Automation Runs Performance -->
+            <div class="grid gap-4 md:grid-cols-2">
+              <!-- AI Usage Card -->
+              <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm flex items-start gap-4">
+                <div class="bg-purple-100 text-purple-700 p-3 rounded-xl text-xl font-bold">✨</div>
+                <div class="flex-1 space-y-1">
+                  <span class="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">AI Suggested Replies</span>
+                  <div class="flex items-baseline gap-1.5">
+                    <span class="text-xl font-black text-slate-800">{{ analyticsData.ai_usage_count }}</span>
+                    <span class="text-[10px] text-slate-500 font-bold">reply suggestions generated</span>
+                  </div>
+                  <p class="text-[10px] text-slate-500 leading-relaxed pt-1.5 border-t border-slate-50">
+                    Calculated by counting every time an agent clicked **✨ Generate AI Reply** to ground the ticket context using the local knowledge base vectors.
+                  </p>
+                </div>
+              </div>
+
+              <!-- Automation Runs Performance Card -->
+              <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm flex items-start gap-4">
+                <div class="bg-blue-100 text-blue-700 p-3 rounded-xl text-xl font-bold">⚡</div>
+                <div class="flex-1 space-y-1">
+                  <span class="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Workflow Automations Runs</span>
+                  <div class="flex items-center gap-3">
+                    <span class="text-xl font-black text-slate-800">
+                      {{ (analyticsData.automation_runs.success_count + analyticsData.automation_runs.failed_count) > 0 ? Math.round((analyticsData.automation_runs.success_count / (analyticsData.automation_runs.success_count + analyticsData.automation_runs.failed_count)) * 100) + '%' : '0%' }}
+                    </span>
+                    <span class="text-[10px] text-slate-500 font-bold">
+                      ({{ analyticsData.automation_runs.success_count }} success / {{ analyticsData.automation_runs.failed_count }} failed runs)
+                    </span>
+                  </div>
+
+                  <!-- Mini bar success vs failed -->
+                  <div class="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden flex mt-2">
+                    <div
+                      class="bg-green-500 h-1.5"
+                      :style="{ width: ((analyticsData.automation_runs.success_count + analyticsData.automation_runs.failed_count) > 0 ? (analyticsData.automation_runs.success_count / (analyticsData.automation_runs.success_count + analyticsData.automation_runs.failed_count)) * 100 : 0) + '%' }"
+                    ></div>
+                    <div
+                      class="bg-red-500 h-1.5"
+                      :style="{ width: ((analyticsData.automation_runs.success_count + analyticsData.automation_runs.failed_count) > 0 ? (analyticsData.automation_runs.failed_count / (analyticsData.automation_runs.success_count + analyticsData.automation_runs.failed_count)) * 100 : 0) + '%' }"
+                    ></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Grid 3: Distributions progress bars -->
+            <div class="grid gap-4 md:grid-cols-3">
+              <!-- Categories Distribution Card -->
+              <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm space-y-3 flex flex-col justify-between min-h-[220px]">
+                <h3 class="text-xs font-bold text-slate-800 border-b border-slate-50 pb-1.5">📂 Tickets by Category</h3>
+                <div v-if="analyticsData.tickets_by_category.length === 0" class="text-center py-8 text-xs text-slate-400 italic">No tickets categorized.</div>
+                <div v-else class="space-y-3.5 flex-1 overflow-y-auto pr-1">
+                  <div v-for="cat in analyticsData.tickets_by_category" :key="cat.category" class="space-y-1">
+                    <div class="flex items-center justify-between text-[11px] font-bold text-slate-700">
+                      <span class="capitalize">{{ cat.category.replace('_', ' ') }}</span>
+                      <span>{{ cat.count }} ({{ Math.round((cat.count / analyticsData.total_tickets) * 100) }}%)</span>
+                    </div>
+                    <div class="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+                      <div class="bg-blue-500 h-1.5 rounded-full" :style="{ width: Math.round((cat.count / analyticsData.total_tickets) * 100) + '%' }"></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Priorities Distribution Card -->
+              <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm space-y-3 flex flex-col justify-between min-h-[220px]">
+                <h3 class="text-xs font-bold text-slate-800 border-b border-slate-50 pb-1.5">🚨 Tickets by Priority</h3>
+                <div v-if="analyticsData.tickets_by_priority.length === 0" class="text-center py-8 text-xs text-slate-400 italic">No priority metrics.</div>
+                <div v-else class="space-y-3.5 flex-1 overflow-y-auto pr-1">
+                  <div v-for="pri in analyticsData.tickets_by_priority" :key="pri.priority" class="space-y-1">
+                    <div class="flex items-center justify-between text-[11px] font-bold text-slate-700">
+                      <span class="capitalize">{{ pri.priority }}</span>
+                      <span>{{ pri.count }} ({{ Math.round((pri.count / analyticsData.total_tickets) * 100) }}%)</span>
+                    </div>
+                    <div class="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+                      <div
+                        class="h-1.5 rounded-full"
+                        :class="{
+                          'bg-red-500': pri.priority === 'urgent',
+                          'bg-orange-500': pri.priority === 'high',
+                          'bg-blue-500': pri.priority === 'medium',
+                          'bg-slate-400': pri.priority === 'low',
+                        }"
+                        :style="{ width: Math.round((pri.count / analyticsData.total_tickets) * 100) + '%' }"
+                      ></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Channels Distribution Card -->
+              <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm space-y-3 flex flex-col justify-between min-h-[220px]">
+                <h3 class="text-xs font-bold text-slate-800 border-b border-slate-50 pb-1.5">🔌 Tickets by Source Channel</h3>
+                <div v-if="analyticsData.tickets_by_source_channel.length === 0" class="text-center py-8 text-xs text-slate-400 italic">No source channel logs.</div>
+                <div v-else class="space-y-3.5 flex-1 overflow-y-auto pr-1">
+                  <div v-for="ch in analyticsData.tickets_by_source_channel" :key="ch.source_channel" class="space-y-1">
+                    <div class="flex items-center justify-between text-[11px] font-bold text-slate-700">
+                      <span class="capitalize">{{ ch.source_channel }}</span>
+                      <span>{{ ch.count }} ({{ Math.round((ch.count / analyticsData.total_tickets) * 100) }}%)</span>
+                    </div>
+                    <div class="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+                      <div
+                        class="h-1.5 rounded-full"
+                        :class="{
+                          'bg-emerald-500': ch.source_channel === 'whatsapp',
+                          'bg-indigo-500': ch.source_channel === 'email',
+                          'bg-sky-500': ch.source_channel === 'web',
+                        }"
+                        :style="{ width: Math.round((ch.count / analyticsData.total_tickets) * 100) + '%' }"
+                      ></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Grid 4: Agent & Workload Performance Table -->
+            <article class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <h3 class="text-xs font-bold text-slate-800 border-b border-slate-50 pb-1.5 mb-3">👥 Support Team Performance & Workloads</h3>
+              <div class="overflow-x-auto">
+                <table class="min-w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr class="text-slate-400 font-bold border-b border-slate-100 text-[10px] uppercase">
+                      <th class="py-2 pr-2">Team Member</th>
+                      <th class="py-2 px-2">Role</th>
+                      <th class="py-2 px-2 text-center">Assigned Tickets</th>
+                      <th class="py-2 px-2 text-center">Resolved Tickets</th>
+                      <th class="py-2 pl-2 text-right">Resolution Efficiency Rate</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-slate-50 font-medium text-slate-700">
+                    <tr v-for="agent in analyticsData.agent_performance" :key="agent.id" class="hover:bg-slate-50/50 transition">
+                      <td class="py-2.5 pr-2">
+                        <div class="flex flex-col">
+                          <span class="font-bold text-slate-800">{{ agent.name }}</span>
+                          <span class="text-[10px] text-slate-400 font-mono">{{ agent.email }}</span>
+                        </div>
+                      </td>
+                      <td class="py-2.5 px-2">
+                        <span
+                          class="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase"
+                          :class="{
+                            'bg-blue-50 text-blue-700 border border-blue-100': agent.role === 'owner',
+                            'bg-purple-50 text-purple-700 border border-purple-100': agent.role === 'admin',
+                            'bg-slate-100 text-slate-700 border border-slate-200': agent.role === 'agent',
+                          }"
+                        >
+                          {{ agent.role }}
+                        </span>
+                      </td>
+                      <td class="py-2.5 px-2 text-center font-mono text-[11px] font-bold">{{ agent.assigned_tickets_count }}</td>
+                      <td class="py-2.5 px-2 text-center font-mono text-[11px] text-slate-500">{{ agent.resolved_tickets_count }}</td>
+                      <td class="py-2.5 pl-2 text-right">
+                        <div class="flex items-center justify-end gap-2">
+                          <span class="font-mono font-bold text-[11px] text-slate-600">
+                            {{ agent.assigned_tickets_count > 0 ? Math.round((agent.resolved_tickets_count / agent.assigned_tickets_count) * 100) + '%' : '0%' }}
+                          </span>
+                          <!-- Mini bar resolution -->
+                          <div class="w-16 bg-slate-100 rounded-full h-1 overflow-hidden">
+                            <div
+                              class="bg-emerald-500 h-1 rounded-full"
+                              :style="{ width: (agent.assigned_tickets_count > 0 ? Math.round((agent.resolved_tickets_count / agent.assigned_tickets_count) * 100) : 0) + '%' }"
+                            ></div>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </article>
+          </div>
+        </div>
+
+        <!-- 📋 Audit Logs Tab Content -->
+        <div v-if="activeTab === 'audit-logs'" class="space-y-4">
+          <div class="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-slate-200 shadow-sm text-left">
+            <div>
+              <h2 class="text-lg font-bold text-slate-900 flex items-center gap-1.5">
+                <span>📋 Audit Trail Explorer</span>
+              </h2>
+              <p class="text-xs text-slate-500">Real-time security and operations logging for Workspace Owners and Admins.</p>
+            </div>
+            <div class="flex items-center gap-2">
+              <div class="relative flex-1 md:w-64">
+                <input
+                  v-model="auditSearchQuery"
+                  type="text"
+                  placeholder="Search by event, operator..."
+                  class="w-full rounded-lg border border-slate-300 pl-8 pr-3 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                />
+                <span class="absolute left-2.5 top-2 text-slate-400 text-xs">🔍</span>
+              </div>
+              <button
+                @click="loadAuditLogsData"
+                class="rounded-lg border border-slate-300 hover:bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700 transition cursor-pointer"
+                :disabled="auditLogsLoading"
+              >
+                {{ auditLogsLoading ? 'Refreshing...' : 'Refresh' }}
+              </button>
+            </div>
+          </div>
+
+          <!-- Loading State Skeletons -->
+          <div v-if="auditLogsLoading" class="space-y-3">
+            <div v-for="i in 3" :key="i" class="animate-pulse bg-white border border-slate-100 rounded-2xl p-4 flex gap-4">
+              <div class="w-10 h-10 bg-slate-200 rounded-full flex-shrink-0"></div>
+              <div class="flex-1 space-y-2 py-1">
+                <div class="h-3 bg-slate-200 rounded w-1/4"></div>
+                <div class="h-4 bg-slate-200 rounded w-3/4"></div>
+                <div class="h-3 bg-slate-200 rounded w-1/2"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Empty State -->
+          <div v-else-if="filteredAuditLogs.length === 0" class="flex flex-col items-center justify-center p-12 bg-white rounded-2xl border border-slate-200 text-center shadow-sm">
+            <span class="text-4xl mb-3">📋</span>
+            <h3 class="text-sm font-bold text-slate-900">No Audit Logs Found</h3>
+            <p class="text-xs text-slate-500 mt-1 max-w-sm">No activity logs were matched for this search query or organization.</p>
+          </div>
+
+          <!-- Timeline Container -->
+          <div v-else class="relative bg-white rounded-2xl border border-slate-200 p-6 shadow-sm text-left">
+            <!-- Central Line -->
+            <div class="absolute left-11 top-8 bottom-8 w-0.5 bg-slate-100"></div>
+
+            <div class="space-y-6 relative">
+              <div v-for="log in filteredAuditLogs" :key="log.id" class="flex gap-4 items-start relative group">
+                <!-- Circular Icon Avatar -->
+                <div
+                  class="w-10 h-10 rounded-full flex items-center justify-center font-bold text-xs shadow-sm z-10 flex-shrink-0"
+                  :class="log.user ? 'bg-blue-50 text-blue-600 border border-blue-100' : 'bg-amber-50 text-amber-600 border border-amber-100'"
+                >
+                  {{ log.user ? log.user.name.split(' ').map((n: any) => n[0]).join('').substring(0, 2).toUpperCase() : 'SYS' }}
+                </div>
+
+                <!-- Log Details Body -->
+                <div class="flex-1 min-w-0 bg-slate-50 rounded-xl p-4 border border-slate-100 group-hover:bg-slate-100/50 transition-all duration-200">
+                  <div class="flex flex-wrap items-center justify-between gap-2 mb-1.5">
+                    <div class="flex items-center gap-2">
+                      <!-- Event Badges -->
+                      <span
+                        class="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border"
+                        :class="{
+                          'bg-blue-100 text-blue-800 border-blue-200': log.event === 'ticket_created',
+                          'bg-yellow-100 text-yellow-800 border-yellow-200': log.event === 'status_changed',
+                          'bg-orange-100 text-orange-800 border-orange-200': log.event === 'assigned_agent_changed',
+                          'bg-purple-100 text-purple-800 border-purple-200': log.event === 'ai_reply_generated',
+                          'bg-amber-100 text-amber-800 border-amber-200': log.event === 'workflow_executed',
+                          'bg-emerald-100 text-emerald-800 border-emerald-200': log.event === 'knowledge_article_updated'
+                        }"
+                      >
+                        {{ log.event.replace('_', ' ') }}
+                      </span>
+
+                      <!-- Timestamp -->
+                      <span class="text-[11px] text-slate-400">
+                        {{ new Date(log.created_at).toLocaleString() }}
+                      </span>
+                    </div>
+
+                    <!-- Inspect Button -->
+                    <button
+                      @click="selectedAuditLog = log; showAuditDetailModal = true"
+                      class="text-xs font-semibold text-blue-600 hover:text-blue-800 transition cursor-pointer"
+                    >
+                      Inspect Raw ↗
+                    </button>
+                  </div>
+
+                  <!-- Activity Description -->
+                  <p class="text-xs font-semibold text-slate-800">
+                    <span v-if="log.event === 'ticket_created'">
+                      Operator <strong>{{ log.user ? log.user.name : 'System' }}</strong> created Ticket #{{ log.target_id }} 
+                      <span class="text-slate-500 font-normal">("{{ log.metadata?.subject }}")</span>
+                    </span>
+                    <span v-else-if="log.event === 'status_changed'">
+                      Operator <strong>{{ log.user ? log.user.name : 'System' }}</strong> updated Ticket #{{ log.target_id }} status 
+                      <span class="text-slate-500 font-normal">from <span class="line-through">{{ log.metadata?.previous_status }}</span> to <strong>{{ log.metadata?.new_status }}</strong></span>
+                    </span>
+                    <span v-else-if="log.event === 'assigned_agent_changed'">
+                      Operator <strong>{{ log.user ? log.user.name : 'System' }}</strong> assigned Ticket #{{ log.target_id }} 
+                      <span class="text-slate-500 font-normal">to <strong>{{ log.metadata?.new_assignee_name || 'Agent ID ' + log.metadata?.new_assignee_id }}</strong></span>
+                    </span>
+                    <span v-else-if="log.event === 'ai_reply_generated'">
+                      ✨ <strong>AI Copilot</strong> generated suggested reply for Ticket #{{ log.target_id }}
+                    </span>
+                    <span v-else-if="log.event === 'workflow_executed'">
+                      ⚡ Automation rule <strong>"{{ log.metadata?.rule_name }}"</strong> executed on Ticket #{{ log.target_id }} 
+                      <span
+                        class="ml-1 text-[10px] font-bold px-1.5 py-0.2 rounded border"
+                        :class="log.metadata?.status === 'success' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200'"
+                      >
+                        {{ log.metadata?.status }}
+                      </span>
+                    </span>
+                    <span v-else-if="log.event === 'knowledge_article_updated'">
+                      Operator <strong>{{ log.user ? log.user.name : 'System' }}</strong> 
+                      {{ log.metadata?.action }} help article <strong>"{{ log.metadata?.title }}"</strong>
+                    </span>
+                    <span v-else>
+                      Activity triggered on target type {{ log.target_type }} (ID: {{ log.target_id }})
+                    </span>
+                  </p>
+
+                  <!-- Network & Device Info -->
+                  <div class="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-slate-400 font-mono">
+                    <span v-if="log.ip_address">💻 IP: {{ log.ip_address }}</span>
+                    <span v-if="log.user_agent" class="truncate max-w-[200px]" :title="log.user_agent">📱 {{ log.user_agent }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 

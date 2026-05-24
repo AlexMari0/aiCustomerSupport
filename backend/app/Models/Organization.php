@@ -16,8 +16,18 @@ class Organization extends Model
         'name',
         'slug',
         'join_code',
+        'webhook_token',
         'owner_user_id',
     ];
+
+    protected static function booted(): void
+    {
+        static::creating(function (Organization $organization): void {
+            if (empty($organization->webhook_token)) {
+                $organization->webhook_token = \Illuminate\Support\Str::random(32);
+            }
+        });
+    }
 
     public function owner(): BelongsTo
     {

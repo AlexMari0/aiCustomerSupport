@@ -7,6 +7,7 @@ export interface OrganizationItem {
   name: string
   slug: string
   join_code: string
+  webhook_token?: string
   role: OrganizationRole
 }
 

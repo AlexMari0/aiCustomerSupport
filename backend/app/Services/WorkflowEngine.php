@@ -107,6 +107,20 @@ class WorkflowEngine
                 'logs' => $logs,
             ]);
 
+            app(\App\Services\AuditLogger::class)->log(
+                organizationId: $ticket->organization_id,
+                userId: $actorUserId > 0 ? $actorUserId : null,
+                event: 'workflow_executed',
+                targetType: 'Ticket',
+                targetId: $ticket->id,
+                metadata: [
+                    'rule_id' => $rule->id,
+                    'rule_name' => $rule->name,
+                    'status' => 'success',
+                    'actions_executed' => $logs['actions_executed'] ?? [],
+                ]
+            );
+
             Log::info("Automation rule '{$rule->name}' successfully executed on Ticket #{$ticket->id}.");
         } catch (\Exception $e) {
             $logs['error'] = $e->getMessage();
@@ -118,6 +132,20 @@ class WorkflowEngine
                 'status' => 'failed',
                 'logs' => $logs,
             ]);
+
+            app(\App\Services\AuditLogger::class)->log(
+                organizationId: $ticket->organization_id,
+                userId: $actorUserId > 0 ? $actorUserId : null,
+                event: 'workflow_executed',
+                targetType: 'Ticket',
+                targetId: $ticket->id,
+                metadata: [
+                    'rule_id' => $rule->id,
+                    'rule_name' => $rule->name,
+                    'status' => 'failed',
+                    'error' => $e->getMessage(),
+                ]
+            );
 
             Log::error("Automation rule '{$rule->name}' failed on Ticket #{$ticket->id}: " . $e->getMessage());
         }
