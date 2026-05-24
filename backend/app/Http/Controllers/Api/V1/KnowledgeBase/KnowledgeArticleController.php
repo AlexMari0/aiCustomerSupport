@@ -7,6 +7,7 @@ use App\Http\Requests\KnowledgeBase\StoreArticleRequest;
 use App\Http\Requests\KnowledgeBase\UpdateArticleRequest;
 use App\Models\KnowledgeBaseArticle;
 use App\Models\Organization;
+use App\Jobs\GenerateKnowledgeEmbeddingJob;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -121,6 +122,8 @@ class KnowledgeArticleController extends ApiController
             'updated_by' => $request->user()->id,
         ]);
 
+        GenerateKnowledgeEmbeddingJob::dispatch($article);
+
         return $this->success([
             'id' => $article->id,
             'title' => $article->title,
@@ -144,6 +147,8 @@ class KnowledgeArticleController extends ApiController
         $data['updated_by'] = $request->user()->id;
 
         $scopedArticle->update($data);
+
+        GenerateKnowledgeEmbeddingJob::dispatch($scopedArticle);
 
         return $this->success([
             'id' => $scopedArticle->id,

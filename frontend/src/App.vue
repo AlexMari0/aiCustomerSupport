@@ -154,6 +154,11 @@ const showKBReferenceSearch = ref(false)
 const kbRefSearchQuery = ref("")
 const kbRefResults = ref<any[]>([])
 
+// AI Suggested Reply State
+const aiLoading = ref(false)
+const aiReferencedArticles = ref<any[]>([])
+const aiSuggestionsHistory = ref<any[]>([])
+
 const echoClient = ref<ReturnType<typeof createEchoClient> | null>(null)
 const realtimeOrgChannel = ref<string | null>(null)
 const realtimeTicketChannel = ref<string | null>(null)
@@ -688,6 +693,8 @@ async function selectTicket(ticketId: number): Promise<void> {
 
   selectedTicketId.value = ticketId
   selectedTicket.value = (response as ApiSuccessResponse<TicketDetail>).data
+  aiReferencedArticles.value = []
+  aiSuggestionsHistory.value = []
   updateStatusValue.value = selectedTicket.value.status
   updatePriorityValue.value = selectedTicket.value.priority
   assignAssigneeId.value = selectedTicket.value.assignee?.id ? `${selectedTicket.value.assignee.id}` : ""
@@ -1133,6 +1140,42 @@ function insertKBContent(art: any): void {
   setMessage("Inserted article body into reply.")
 }
 
+// AI Suggested Reply API Integration
+async function generateAiReply(): Promise<void> {
+  if (selectedOrganizationId.value === null || selectedTicketId.value === null) {
+    return
+  }
+
+  aiLoading.value = true
+  aiReferencedArticles.value = []
+  try {
+    const response = await postJson<any>(
+      `/organizations/${selectedOrganizationId.value}/tickets/${selectedTicketId.value}/ai-suggest`,
+      {},
+      token.value
+    )
+
+    if (response.success) {
+      const payload = (response as ApiSuccessResponse<any>).data
+      newMessage.value = payload.suggested_reply
+      aiReferencedArticles.value = payload.referenced_articles || []
+      aiSuggestionsHistory.value = payload.history || []
+      setMessage("AI suggested reply generated successfully.")
+    } else {
+      setMessage(response.message || "Failed to generate AI suggestion.")
+    }
+  } catch (error) {
+    setMessage("Failed to contact the AI suggestion service. Please try again.")
+  } finally {
+    aiLoading.value = false
+  }
+}
+
+function applyHistoricalAiSuggestion(replyText: string): void {
+  newMessage.value = replyText
+  setMessage("Historical AI suggestion applied to reply editor.")
+}
+
 onMounted(async () => {
   if (token.value) {
     await loadSession()
@@ -1483,6 +1526,25 @@ onBeforeUnmount(() => {
                   </li>
                 </ul>
 
+                <!-- AI Copilot Trigger Bar -->
+                <div class="mt-3 mb-2 flex items-center justify-between bg-purple-50/50 border border-purple-100 rounded-xl p-2.5">
+                  <div class="flex items-center gap-2">
+                    <span class="text-xs font-extrabold uppercase tracking-wider text-purple-700 bg-purple-100/80 px-2 py-0.5 rounded-md flex items-center gap-1">
+                      ✨ AI Copilot
+                    </span>
+                    <span class="text-xs text-purple-600 hidden sm:inline">Draft grounded solutions in one click.</span>
+                  </div>
+                  <button
+                    type="button"
+                    class="rounded-lg bg-purple-600 hover:bg-purple-700 px-3 py-1.5 text-xs font-bold text-white shadow-xs transition duration-200 flex items-center gap-1 cursor-pointer"
+                    :disabled="aiLoading"
+                    @click="generateAiReply"
+                  >
+                    <span v-if="aiLoading" class="animate-spin inline-block w-3 h-3 border-2 border-white border-t-transparent rounded-full mr-1"></span>
+                    {{ aiLoading ? 'Reading KB...' : 'Generate AI Reply' }}
+                  </button>
+                </div>
+
                 <div class="mt-2 flex gap-2">
                   <select v-model="newMessageSenderType" class="rounded-lg border border-slate-300 px-3 py-2 text-sm">
                     <option value="agent">agent</option>
@@ -1500,6 +1562,48 @@ onBeforeUnmount(() => {
                   </button>
                 </div>
                 <p v-if="typingIndicator" class="mt-1 text-xs text-emerald-700">{{ typingIndicator }}</p>
+
+                <!-- AI Grounding References & History Panel -->
+                <div v-if="aiReferencedArticles.length > 0 || aiSuggestionsHistory.length > 0" class="mt-3 bg-purple-50/30 border border-purple-100/50 rounded-xl p-3 space-y-2.5">
+                  <!-- Grounding References -->
+                  <div v-if="aiReferencedArticles.length > 0">
+                    <h4 class="text-[10px] font-bold text-purple-700 uppercase tracking-wider mb-1 flex items-center gap-1">
+                      📚 Articles Referenced by AI
+                    </h4>
+                    <div class="flex flex-wrap gap-1.5">
+                      <span
+                        v-for="refArt in aiReferencedArticles"
+                        :key="refArt.id"
+                        class="text-[10px] bg-purple-100/60 border border-purple-200/50 text-purple-800 px-2 py-0.5 rounded-md font-semibold"
+                      >
+                        {{ refArt.title }}
+                      </span>
+                    </div>
+                  </div>
+
+                  <!-- History Accordion -->
+                  <div v-if="aiSuggestionsHistory.length > 1">
+                    <h4 class="text-[10px] font-bold text-purple-700 uppercase tracking-wider mb-1.5 flex items-center gap-1">
+                      🕰️ Suggestion History
+                    </h4>
+                    <div class="max-h-24 overflow-y-auto space-y-1.5 pr-0.5">
+                      <div
+                        v-for="hist in aiSuggestionsHistory.slice(1)"
+                        :key="hist.id"
+                        class="p-2 bg-white border border-purple-100/50 rounded-lg flex items-center justify-between gap-3 shadow-2xs"
+                      >
+                        <p class="text-[11px] text-slate-600 truncate flex-1 italic">"{{ hist.suggested_reply }}"</p>
+                        <button
+                          type="button"
+                          class="text-[10px] font-bold text-purple-600 hover:text-purple-700 shrink-0 uppercase tracking-wider underline cursor-pointer"
+                          @click="applyHistoricalAiSuggestion(hist.suggested_reply)"
+                        >
+                          Apply
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
 
                 <!-- Knowledge Base Reference Attach Widget -->
                 <div class="mt-3 bg-slate-50 border border-slate-200 rounded-xl p-3 shadow-xs">

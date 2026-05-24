@@ -133,5 +133,105 @@ class DatabaseSeeder extends Seeder
                 ]
             );
         }
+
+        // 6. Seed Customers
+        $customerAlice = \App\Models\Customer::query()->firstOrCreate(
+            ['email' => 'alice@merchant.com', 'organization_id' => $organization->id],
+            [
+                'name' => 'Alice Merchant',
+                'phone' => '+15550192',
+                'source_channel' => 'web',
+                'tags' => ['VIP', 'New Customer'],
+            ]
+        );
+
+        $customerBob = \App\Models\Customer::query()->firstOrCreate(
+            ['email' => 'bob@example.com', 'organization_id' => $organization->id],
+            [
+                'name' => 'Bob Smith',
+                'phone' => '+15550481',
+                'source_channel' => 'whatsapp',
+                'tags' => ['Repeat Issue'],
+            ]
+        );
+
+        // 7. Seed Tickets & Messages
+        $ticket1 = \App\Models\Ticket::query()->firstOrCreate(
+            [
+                'organization_id' => $organization->id,
+                'customer_id' => $customerAlice->id,
+                'subject' => 'Urgent: Need a refund for order #98721',
+            ],
+            [
+                'created_by' => $user->id,
+                'status' => \App\Support\TicketStatuses::OPEN,
+                'priority' => \App\Support\TicketPriorities::HIGH,
+                'category' => 'billing',
+                'source_channel' => 'web',
+            ]
+        );
+
+        \App\Models\TicketMessage::query()->firstOrCreate(
+            [
+                'organization_id' => $organization->id,
+                'ticket_id' => $ticket1->id,
+                'body' => 'Hi there! I bought the standard package last week (Order #98721), but it turns out we need the enterprise features instead. I would like to request a refund so that we can repurchase the correct license. Can you please help process this?',
+            ],
+            [
+                'sender_type' => \App\Support\TicketMessageSenderTypes::CUSTOMER,
+            ]
+        );
+
+        $ticket2 = \App\Models\Ticket::query()->firstOrCreate(
+            [
+                'organization_id' => $organization->id,
+                'customer_id' => $customerBob->id,
+                'subject' => 'Where is my package? Standard shipping inquiry',
+            ],
+            [
+                'created_by' => $user->id,
+                'status' => \App\Support\TicketStatuses::OPEN,
+                'priority' => \App\Support\TicketPriorities::MEDIUM,
+                'category' => 'shipping',
+                'source_channel' => 'whatsapp',
+            ]
+        );
+
+        \App\Models\TicketMessage::query()->firstOrCreate(
+            [
+                'organization_id' => $organization->id,
+                'ticket_id' => $ticket2->id,
+                'body' => "Hello, I placed order #10892 four days ago and chose standard shipping, but I haven't received a tracking link yet. Could you check if it has shipped and when it will arrive?",
+            ],
+            [
+                'sender_type' => \App\Support\TicketMessageSenderTypes::CUSTOMER,
+            ]
+        );
+
+        $ticket3 = \App\Models\Ticket::query()->firstOrCreate(
+            [
+                'organization_id' => $organization->id,
+                'customer_id' => $customerBob->id,
+                'subject' => 'Payment failed during checkout with card',
+            ],
+            [
+                'created_by' => $user->id,
+                'status' => \App\Support\TicketStatuses::OPEN,
+                'priority' => \App\Support\TicketPriorities::LOW,
+                'category' => 'technical_issue',
+                'source_channel' => 'web',
+            ]
+        );
+
+        \App\Models\TicketMessage::query()->firstOrCreate(
+            [
+                'organization_id' => $organization->id,
+                'ticket_id' => $ticket3->id,
+                'body' => 'Hi, I tried to purchase the subscription yesterday but my payment was declined. I tried multiple times but it says checkout error. Can you help me?',
+            ],
+            [
+                'sender_type' => \App\Support\TicketMessageSenderTypes::CUSTOMER,
+            ]
+        );
     }
 }

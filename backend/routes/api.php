@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\V1\Organizations\OrganizationMembershipController;
 use App\Http\Controllers\Api\V1\Tickets\TicketController;
 use App\Http\Controllers\Api\V1\KnowledgeBase\KnowledgeCategoryController;
 use App\Http\Controllers\Api\V1\KnowledgeBase\KnowledgeArticleController;
+use App\Http\Controllers\Api\V1\AI\AiReplyController;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Route;
 
@@ -67,6 +68,8 @@ Route::prefix('v1')->group(function (): void {
                 Route::post('/tickets/{ticket}/notes', [TicketController::class, 'addNote'])
                     ->middleware('organization.role:owner,admin,agent');
                 Route::post('/tickets/{ticket}/messages', [TicketController::class, 'addMessage'])
+                    ->middleware('organization.role:owner,admin,agent');
+                Route::post('/tickets/{ticket}/ai-suggest', [AiReplyController::class, 'suggest'])
                     ->middleware('organization.role:owner,admin,agent');
 
                 // Knowledge Base Categories
