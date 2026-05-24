@@ -35,6 +35,10 @@ export interface TicketListItem {
   assignee: BasicUser | null
   messages_count: number
   notes_count: number
+  ai_category?: string | null
+  ai_sentiment?: string | null
+  ai_priority?: string | null
+  ai_confidence?: number | null
   created_at: string
   updated_at: string
 }
@@ -46,6 +50,10 @@ export interface TicketDetail {
   priority: TicketPriority
   category: string | null
   source_channel: string
+  ai_category: string | null
+  ai_sentiment: string | null
+  ai_priority: string | null
+  ai_confidence: number | null
   customer: {
     id: number
     name: string

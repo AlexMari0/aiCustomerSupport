@@ -98,6 +98,10 @@ class TicketController extends ApiController
                     'assignee' => $ticket->assignee?->only(['id', 'name', 'email']),
                     'messages_count' => $ticket->messages_count,
                     'notes_count' => $ticket->notes_count,
+                    'ai_category' => $ticket->ai_category,
+                    'ai_sentiment' => $ticket->ai_sentiment,
+                    'ai_priority' => $ticket->ai_priority,
+                    'ai_confidence' => $ticket->ai_confidence,
                     'created_at' => $ticket->created_at,
                     'updated_at' => $ticket->updated_at,
                 ];
@@ -149,6 +153,10 @@ class TicketController extends ApiController
             'priority' => $scopedTicket->priority,
             'category' => $scopedTicket->category,
             'source_channel' => $scopedTicket->source_channel,
+            'ai_category' => $scopedTicket->ai_category,
+            'ai_sentiment' => $scopedTicket->ai_sentiment,
+            'ai_priority' => $scopedTicket->ai_priority,
+            'ai_confidence' => $scopedTicket->ai_confidence,
             'customer' => $scopedTicket->customer?->only([
                 'id',
                 'name',
@@ -247,6 +255,10 @@ class TicketController extends ApiController
 
         TicketCreated::dispatch($ticket, $request->user()->id);
 
+        \App\Jobs\ClassifyTicketJob::dispatch($ticket);
+
+        app(\App\Services\WorkflowEngine::class)->trigger('ticket_created', $ticket);
+
         return $this->success([
             'id' => $ticket->id,
             'subject' => $ticket->subject,
@@ -283,6 +295,8 @@ class TicketController extends ApiController
             TicketResolved::dispatch($scopedTicket, $request->user()->id);
         }
 
+        app(\App\Services\WorkflowEngine::class)->trigger('ticket_updated', $scopedTicket);
+
         return $this->success([
             'id' => $scopedTicket->id,
             'status' => $scopedTicket->status,
@@ -311,6 +325,8 @@ class TicketController extends ApiController
             ],
             $request->user()->id
         );
+
+        app(\App\Services\WorkflowEngine::class)->trigger('priority_changed', $scopedTicket);
 
         return $this->success([
             'id' => $scopedTicket->id,
@@ -446,5 +462,57 @@ class TicketController extends ApiController
                 'errors' => [],
             ], JsonResponse::HTTP_FORBIDDEN));
         }
+    }
+
+    public function classify(Request $request, Organization $organization, Ticket $ticket): JsonResponse
+    {
+        $scopedTicket = $this->resolveScopedTicket($organization, $ticket);
+        $this->assertAgentCanAccessTicket($request, $organization, $scopedTicket);
+
+        // Dispatches/runs job synchronously for immediate UI feedback
+        $job = new \App\Jobs\ClassifyTicketJob($scopedTicket);
+        app()->call([$job, 'handle']);
+
+        return $this->success([
+            'id' => $scopedTicket->id,
+            'ai_category' => $scopedTicket->ai_category,
+            'ai_sentiment' => $scopedTicket->ai_sentiment,
+            'ai_priority' => $scopedTicket->ai_priority,
+            'ai_confidence' => $scopedTicket->ai_confidence,
+            'category' => $scopedTicket->category,
+            'priority' => $scopedTicket->priority,
+        ], 'Ticket classified successfully.');
+    }
+
+    public function updateCategory(Request $request, Organization $organization, Ticket $ticket): JsonResponse
+    {
+        $scopedTicket = $this->resolveScopedTicket($organization, $ticket);
+        $this->assertAgentCanAccessTicket($request, $organization, $scopedTicket);
+
+        $request->validate([
+            'category' => 'nullable|string|max:255',
+        ]);
+
+        $previousCategory = $scopedTicket->category;
+
+        $scopedTicket->update([
+            'category' => $request->string('category')->value() ?: null,
+        ]);
+
+        TicketUpdated::dispatch(
+            $scopedTicket,
+            [
+                'category' => [
+                    'from' => $previousCategory,
+                    'to' => $scopedTicket->category,
+                ],
+            ],
+            $request->user()->id
+        );
+
+        return $this->success([
+            'id' => $scopedTicket->id,
+            'category' => $scopedTicket->category,
+        ], 'Ticket category updated.');
     }
 }

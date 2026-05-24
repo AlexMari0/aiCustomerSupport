@@ -21,6 +21,10 @@ class Ticket extends Model
         'priority',
         'category',
         'source_channel',
+        'ai_category',
+        'ai_sentiment',
+        'ai_priority',
+        'ai_confidence',
     ];
 
     public function organization(): BelongsTo

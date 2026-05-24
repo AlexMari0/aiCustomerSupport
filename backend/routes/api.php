@@ -62,7 +62,11 @@ Route::prefix('v1')->group(function (): void {
                 Route::patch('/tickets/{ticket}/status', [TicketController::class, 'updateStatus'])
                     ->middleware('organization.role:owner,admin,agent');
                 Route::patch('/tickets/{ticket}/priority', [TicketController::class, 'updatePriority'])
-                    ->middleware('organization.role:owner,admin');
+                    ->middleware('organization.role:owner,admin,agent');
+                Route::patch('/tickets/{ticket}/category', [TicketController::class, 'updateCategory'])
+                    ->middleware('organization.role:owner,admin,agent');
+                Route::post('/tickets/{ticket}/classify', [TicketController::class, 'classify'])
+                    ->middleware('organization.role:owner,admin,agent');
                 Route::patch('/tickets/{ticket}/assign', [TicketController::class, 'assign'])
                     ->middleware('organization.role:owner,admin');
                 Route::post('/tickets/{ticket}/notes', [TicketController::class, 'addNote'])
@@ -93,6 +97,18 @@ Route::prefix('v1')->group(function (): void {
                     ->middleware('organization.role:owner,admin');
                 Route::delete('/knowledge-base/articles/{article}', [KnowledgeArticleController::class, 'destroy'])
                     ->middleware('organization.role:owner,admin');
+
+                // Workflow Automations
+                Route::get('/automations/rules', [\App\Http\Controllers\Api\V1\Automations\AutomationController::class, 'index'])
+                    ->middleware('organization.role:owner,admin,agent');
+                Route::post('/automations/rules', [\App\Http\Controllers\Api\V1\Automations\AutomationController::class, 'store'])
+                    ->middleware('organization.role:owner,admin');
+                Route::patch('/automations/rules/{rule}/toggle', [\App\Http\Controllers\Api\V1\Automations\AutomationController::class, 'toggle'])
+                    ->middleware('organization.role:owner,admin');
+                Route::delete('/automations/rules/{rule}', [\App\Http\Controllers\Api\V1\Automations\AutomationController::class, 'destroy'])
+                    ->middleware('organization.role:owner,admin');
+                Route::get('/tickets/{ticket}/automation-runs', [\App\Http\Controllers\Api\V1\Automations\AutomationController::class, 'ticketRuns'])
+                    ->middleware('organization.role:owner,admin,agent');
             });
     });
 });

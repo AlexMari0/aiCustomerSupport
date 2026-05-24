@@ -97,6 +97,129 @@ class OpenAIService
     }
 
     /**
+     * Classify ticket subject and first message context.
+     * Returns category, sentiment, priority, confidence score.
+     *
+     * @return array{category: string, sentiment: string, priority: string, confidence: float}
+     */
+    public function classifyTicket(string $subject, string $firstMessage): array
+    {
+        if (empty($this->apiKey)) {
+            Log::info("OpenAI API key is missing. Generating deterministic mock classification.");
+            return $this->generateMockClassification($subject, $firstMessage);
+        }
+
+        try {
+            $prompt = "Classify this customer support ticket based on the subject and the first customer message.\n\n" .
+                "Subject: {$subject}\n" .
+                "Message: {$firstMessage}\n\n" .
+                "You MUST return a JSON object with the exact keys: 'category', 'sentiment', 'priority', 'confidence'.\n\n" .
+                "Allowed Category values: 'billing', 'refund', 'technical_issue', 'shipping', 'product_question', 'account_issue'.\n" .
+                "Allowed Sentiment values: 'neutral', 'frustrated', 'angry', 'satisfied'.\n" .
+                "Allowed Priority values: 'low', 'medium', 'high', 'urgent'.\n" .
+                "Confidence should be a float between 0.0 and 1.0.";
+
+            $response = Http::withHeaders([
+                'Authorization' => 'Bearer ' . $this->apiKey,
+                'Content-Type' => 'application/json',
+            ])
+            ->timeout(10)
+            ->post('https://api.openai.com/v1/chat/completions', [
+                'model' => 'gpt-4o-mini',
+                'response_format' => ['type' => 'json_object'],
+                'messages' => [
+                    [
+                        'role' => 'system',
+                        'content' => "You are an AI support ticket classifier. Analyze the subject and customer message carefully and return a JSON object containing category, sentiment, priority, and confidence score.",
+                    ],
+                    [
+                        'role' => 'user',
+                        'content' => $prompt,
+                    ],
+                ],
+                'temperature' => 0.0,
+            ]);
+
+            if ($response->successful()) {
+                $json = json_decode($response->json('choices.0.message.content'), true);
+                if (is_array($json) && isset($json['category'], $json['sentiment'], $json['priority'], $json['confidence'])) {
+                    return [
+                        'category' => (string) $json['category'],
+                        'sentiment' => (string) $json['sentiment'],
+                        'priority' => (string) $json['priority'],
+                        'confidence' => (float) $json['confidence'],
+                    ];
+                }
+            }
+
+            Log::warning("OpenAI classification failed: " . $response->body() . ". Using mock fallback.");
+        } catch (\Exception $e) {
+            Log::warning("OpenAI classification exception: " . $e->getMessage() . ". Using mock fallback.");
+        }
+
+        return $this->generateMockClassification($subject, $firstMessage);
+    }
+
+    /**
+     * Generate structured mock ticket classification based on content keywords.
+     *
+     * @return array{category: string, sentiment: string, priority: string, confidence: float}
+     */
+    protected function generateMockClassification(string $subject, string $firstMessage): array
+    {
+        $content = Str::lower($subject . ' ' . $firstMessage);
+
+        $category = 'product_question';
+        $sentiment = 'neutral';
+        $priority = 'medium';
+        $confidence = 0.75;
+
+        // Detect sentiment
+        if (Str::contains($content, ['angry', 'furious', 'terrible', 'awful', 'hate', 'unacceptable', 'bad service'])) {
+            $sentiment = 'angry';
+            $priority = 'urgent';
+            $confidence = 0.94;
+        } elseif (Str::contains($content, ['frustrated', 'annoyed', 'disappointed', 'waiting', 'slow', 'broken', 'not working', 'failed'])) {
+            $sentiment = 'frustrated';
+            $priority = 'high';
+            $confidence = 0.90;
+        } elseif (Str::contains($content, ['happy', 'satisfied', 'great', 'thank you', 'thanks', 'perfect'])) {
+            $sentiment = 'satisfied';
+            $confidence = 0.88;
+        }
+
+        // Detect category & priority overrides
+        if (Str::contains($content, ['refund', 'money back', 'chargeback'])) {
+            $category = 'refund';
+            $priority = $sentiment === 'angry' ? 'urgent' : 'high';
+            $confidence = 0.96;
+        } elseif (Str::contains($content, ['shipping', 'delivery', 'express', 'track', 'arrive', 'package'])) {
+            $category = 'shipping';
+            if ($sentiment === 'neutral') {
+                $priority = 'medium';
+            }
+            $confidence = 0.92;
+        } elseif (Str::contains($content, ['payment', 'failed', 'declined', 'checkout', 'card', 'billing', 'charge'])) {
+            $category = 'billing';
+            $priority = $sentiment === 'angry' ? 'urgent' : 'high';
+            $confidence = 0.95;
+        } elseif (Str::contains($content, ['password', 'account', 'login', 'register', 'verification', 'verify', 'otp'])) {
+            $category = 'account_issue';
+            $confidence = 0.89;
+        } elseif (Str::contains($content, ['error', 'bug', 'broken', 'crash', 'not working', 'issue', 'technical'])) {
+            $category = 'technical_issue';
+            $confidence = 0.87;
+        }
+
+        return [
+            'category' => $category,
+            'sentiment' => $sentiment,
+            'priority' => $priority,
+            'confidence' => $confidence,
+        ];
+    }
+
+    /**
      * Generate a deterministic mock float vector of 1536 elements.
      *
      * @return array<int, float>

@@ -182,6 +182,8 @@ class DatabaseSeeder extends Seeder
             ]
         );
 
+        \App\Jobs\ClassifyTicketJob::dispatchSync($ticket1);
+
         $ticket2 = \App\Models\Ticket::query()->firstOrCreate(
             [
                 'organization_id' => $organization->id,
@@ -208,6 +210,8 @@ class DatabaseSeeder extends Seeder
             ]
         );
 
+        \App\Jobs\ClassifyTicketJob::dispatchSync($ticket2);
+
         $ticket3 = \App\Models\Ticket::query()->firstOrCreate(
             [
                 'organization_id' => $organization->id,
@@ -231,6 +235,88 @@ class DatabaseSeeder extends Seeder
             ],
             [
                 'sender_type' => \App\Support\TicketMessageSenderTypes::CUSTOMER,
+            ]
+        );
+
+        \App\Jobs\ClassifyTicketJob::dispatchSync($ticket3);
+
+        // 8. Seed Automation Rules
+        $escalateRule = \App\Models\AutomationRule::query()->firstOrCreate(
+            [
+                'organization_id' => $organization->id,
+                'name' => 'Escalate Urgent & Angry Tickets',
+            ],
+            [
+                'trigger_type' => 'ticket_created',
+                'is_active' => true,
+                'created_by' => $user->id,
+            ]
+        );
+
+        if ($escalateRule->wasRecentlyCreated || !$escalateRule->conditions()->exists()) {
+            $escalateRule->conditions()->create([
+                'field' => 'sentiment',
+                'operator' => 'equals',
+                'value' => 'angry',
+            ]);
+
+            $escalateRule->actions()->create([
+                'action_type' => 'change_priority',
+                'action_value' => 'urgent',
+            ]);
+
+            $escalateRule->actions()->create([
+                'action_type' => 'add_internal_note',
+                'action_value' => 'System: This ticket has been automatically escalated to URGENT due to angry sentiment detected.',
+            ]);
+        }
+
+        $refundRule = \App\Models\AutomationRule::query()->firstOrCreate(
+            [
+                'organization_id' => $organization->id,
+                'name' => 'Route Refunds to Owner',
+            ],
+            [
+                'trigger_type' => 'ticket_created',
+                'is_active' => true,
+                'created_by' => $user->id,
+            ]
+        );
+
+        if ($refundRule->wasRecentlyCreated || !$refundRule->conditions()->exists()) {
+            $refundRule->conditions()->create([
+                'field' => 'category',
+                'operator' => 'equals',
+                'value' => 'refund',
+            ]);
+
+            $refundRule->actions()->create([
+                'action_type' => 'assign_to_agent',
+                'action_value' => (string) $user->id,
+            ]);
+
+            $refundRule->actions()->create([
+                'action_type' => 'add_internal_note',
+                'action_value' => 'System: Refund ticket automatically routed to workspace Owner.',
+            ]);
+        }
+
+        // 9. Seed a sample run for Ticket #1 (Refund)
+        \App\Models\AutomationRun::query()->firstOrCreate(
+            [
+                'organization_id' => $organization->id,
+                'automation_rule_id' => $refundRule->id,
+                'ticket_id' => $ticket1->id,
+            ],
+            [
+                'status' => 'success',
+                'logs' => [
+                    'message' => 'Executed Route Refunds to Owner rule successfully.',
+                    'actions_executed' => [
+                        'assign_to_agent' => $user->id,
+                        'add_internal_note' => 'System: Refund ticket automatically routed to workspace Owner.',
+                    ]
+                ]
             ]
         );
     }
