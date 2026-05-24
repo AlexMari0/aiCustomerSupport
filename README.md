@@ -88,6 +88,37 @@ All API responses use this shape:
 - `GET /api/v1/organizations/{organization}/members` (owner/admin)
 - `PATCH /api/v1/organizations/{organization}/members/{member}` (owner-only)
 
+## Core Ticket Management API
+
+- `GET /api/v1/organizations/{organization}/tickets`
+- `GET /api/v1/organizations/{organization}/tickets/{ticket}`
+- `POST /api/v1/organizations/{organization}/tickets`
+- `PATCH /api/v1/organizations/{organization}/tickets/{ticket}/status`
+- `PATCH /api/v1/organizations/{organization}/tickets/{ticket}/priority`
+- `PATCH /api/v1/organizations/{organization}/tickets/{ticket}/assign`
+- `POST /api/v1/organizations/{organization}/tickets/{ticket}/notes`
+- `POST /api/v1/organizations/{organization}/tickets/{ticket}/messages`
+
+List supports filters:
+
+- `search`
+- `status`
+- `priority`
+- `assignee_id`
+- `category`
+
+## Customer & Conversation Management API
+
+- `GET /api/v1/organizations/{organization}/customers`
+- `GET /api/v1/organizations/{organization}/customers/{customer}`
+- `PATCH /api/v1/organizations/{organization}/customers/{customer}`
+
+Customer list filters:
+
+- `search`
+- `source_channel`
+- `tag`
+
 Error responses:
 
 ```json

@@ -16,8 +16,19 @@ class Customer extends Model
         'name',
         'email',
         'phone',
+        'source_channel',
+        'tags',
+        'last_contacted_at',
         'external_id',
     ];
+
+    protected function casts(): array
+    {
+        return [
+            'tags' => 'array',
+            'last_contacted_at' => 'datetime',
+        ];
+    }
 
     public function organization(): BelongsTo
     {
